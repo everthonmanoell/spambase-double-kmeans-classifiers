@@ -5,14 +5,16 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
 
 
-class GaussianBayesClassifier(BaseEstimator, ClassifierMixin):
-    """Bayesian classifier with multivariate normal class densities (ML estimates).
+class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
+    """Bayesian classifier with multivariate normal class densities.
 
-    Covariances are regularized with lambda * I and handled via Cholesky
-    factors in log-space.
+    Priors, means and covariances are ML estimates, but the density uses the
+    regularized covariance Sigma_ML + lambda * I, so for lambda > 0 it is no
+    longer a pure ML estimate. Computations use Cholesky factors in log-space.
 
     Args:
-        reg_lambda (float, optional): Diagonal regularization. Defaults to 1e-4.
+        reg_lambda (float, optional): Diagonal regularization, must be > 0.
+            Defaults to 1e-4.
     """
 
     def __init__(self, reg_lambda=1e-4):
@@ -28,6 +30,9 @@ class GaussianBayesClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             self: The fitted classifier.
         """
+        if not self.reg_lambda > 0:
+            raise ValueError(f"reg_lambda must be > 0, got {self.reg_lambda!r}.")
+
         X = np.asarray(X, dtype=float)
         y = np.asarray(y)
 
