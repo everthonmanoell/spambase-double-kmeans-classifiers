@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import solve_triangular
 from scipy.special import logsumexp
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
 
 class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
@@ -33,8 +33,8 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
         if not self.reg_lambda > 0:
             raise ValueError(f"reg_lambda must be > 0, got {self.reg_lambda!r}.")
 
-        X = np.asarray(X, dtype=float)
-        y = np.asarray(y)
+        # Also stores n_features_in_ and rejects NaN/inf values.
+        X, y = validate_data(self, X, y, dtype=float)
 
         self.classes_ = np.unique(y)
         n_classes = len(self.classes_)
@@ -80,7 +80,8 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
     def _joint_log_likelihood(self, X):
         """Compute log p(x | w_i) + log P(w_i) for every sample and class."""
         check_is_fitted(self)
-        X = np.asarray(X, dtype=float)
+        # reset=False checks that X has the same number of features as in fit.
+        X = validate_data(self, X, dtype=float, reset=False)
 
         jll = np.empty((X.shape[0], len(self.classes_)))
         for i in range(len(self.classes_)):
