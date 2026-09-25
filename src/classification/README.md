@@ -17,7 +17,6 @@
 
 
 
-
 ## Decisões de Arquitetura: Classificador Janela de Parzen
 
 * **Integração com o Ecossistema Scikit-Learn:** A classe customizada `ParzenWindowClassifier` herda de `BaseEstimator` e `ClassifierMixin`. Esta estrutura foi adotada para garantir compatibilidade nativa com o `GridSearchCV`, permitindo que o modelo seja injetado diretamente no pipeline de validação cruzada aninhada ($30 \times 10$-folds) exigido na Questão 2a, automatizando o ajuste da janela $h$ sem a necessidade de loops manuais de busca[cite: 4].
