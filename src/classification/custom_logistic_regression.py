@@ -8,9 +8,8 @@ class CustomLogisticRegression(BaseEstimator, ClassifierMixin):
     This class wraps the scikit-learn implementation to preserve the project's
     classifier architecture.
     """
-    def __init__(self, C=1.0, penalty='l2', solver='lbfgs', max_iter=10000):
+    def __init__(self, C=1.0, solver='lbfgs', max_iter=10000):
         self.C = C
-        self.penalty = penalty
         self.solver = solver
         # A high max_iter value is required for convergence on the Spambase dataset.
         self.max_iter = max_iter 
@@ -27,9 +26,10 @@ class CustomLogisticRegression(BaseEstimator, ClassifierMixin):
         Returns:
             The fitted classifier instance.
         """
+
+        # penalty='l2' is the default with the 'lbfgs' solver, so we don't need to specify it explicitly.
         self.model_ = LogisticRegression(
             C=self.C,
-            penalty=self.penalty,
             solver=self.solver,
             max_iter=self.max_iter,
             random_state=42
@@ -69,6 +69,5 @@ class CustomLogisticRegression(BaseEstimator, ClassifierMixin):
         """
         return {
             'C': [0.01, 0.1, 1.0, 10.0, 100.0],
-            'penalty': ['l2'],
             'solver': ['lbfgs']
         }
