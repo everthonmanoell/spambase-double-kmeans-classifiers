@@ -16,6 +16,9 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
         2. U fixed G, V: each object goes to the closest object group.
         3. V fixed G, U: each variable goes to the closest variable group.
 
+    In steps 2 and 3 an item only changes group on a strict improvement, so
+    ties keep it where it is and the run cannot cycle.
+
     The slides do not cover empty groups. When step 2 or 3 empties a group, it
     receives the highest-cost item of a group with at least 2 members, so the
     result always has K object groups and H variable groups and W does not
@@ -87,7 +90,7 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
             col_onehot = np.eye(H)[col_labels]
             n_h = col_onehot.sum(axis=0)
             row_cost = -2.0 * (X @ col_onehot) @ G.T + (G ** 2) @ n_h
-            new_row_labels = np.argmin(row_cost, axis=1)
+            new_row_labels = self._assign(row_cost, row_labels)
             new_row_labels, G, n_moved = self._relocate_empty_groups(
                 X, G, new_row_labels, col_labels)
             n_relocations += n_moved
@@ -98,7 +101,7 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
             row_onehot = np.eye(K)[new_row_labels]
             n_k = row_onehot.sum(axis=0)
             col_cost = -2.0 * (row_onehot.T @ X).T @ G + n_k @ (G ** 2)
-            new_col_labels = np.argmin(col_cost, axis=1)
+            new_col_labels = self._assign(col_cost, col_labels)
             # Same relocation for variables: the transposed problem.
             new_col_labels, G_t, n_moved = self._relocate_empty_groups(
                 X.T, G.T, new_col_labels, new_row_labels)
@@ -127,6 +130,28 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
         self.converged_ = converged
         self.n_relocations_ = n_relocations
         return self
+
+    @staticmethod
+    def _assign(cost, current_labels):
+        """Assign each item to its lowest-cost group, keeping it on ties.
+
+        An item only moves on a strict improvement over its current group, as
+        in TwoMP (Schepers & Hofmans, 2009) and Hartigan-Wong k-means. Every
+        move then strictly lowers W, so the run cannot cycle between
+        partitions with the same W.
+
+        Args:
+            cost (numpy.ndarray of shape (n_items, n_groups)): Cost of each
+                item in each group.
+            current_labels (numpy.ndarray of shape (n_items,)): Current groups.
+
+        Returns:
+            numpy.ndarray of shape (n_items,): New groups.
+        """
+        best = np.argmin(cost, axis=1)
+        items = np.arange(len(current_labels))
+        improves = cost[items, best] < cost[items, current_labels]
+        return np.where(improves, best, current_labels)
 
     @staticmethod
     def _relocate_empty_groups(X, G, labels, other_labels):

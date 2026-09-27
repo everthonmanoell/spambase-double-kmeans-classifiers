@@ -1,11 +1,13 @@
 ## Decisões de Arquitetura: Double k-means
 
-* **Algoritmo Seguido:** A classe `DoubleKMeans` implementa o double k-means dos slides da disciplina (`docs/Double k-means.pdf`), que obtém ao mesmo tempo uma partição exclusiva dos objetos em $K$ grupos, uma partição exclusiva das variáveis em $H$ grupos e a matriz de protótipos $G = (g_{kh})$ dos $K \times H$ blocos. A função objetivo minimizada é $W(G, U, V) = \sum_{k=1}^{K}\sum_{h=1}^{H}\sum_{i=1}^{N}\sum_{j=1}^{P} u_{ik}\, v_{jh}\, (x_{ij} - g_{kh})^2$. A otimização alterna os três passos dos slides, sempre nessa ordem, até que nenhum objeto e nenhuma variável mude de grupo:
+* **Algoritmo Seguido:** A classe `DoubleKMeans` implementa o double k-means (Vichi, 2001) conforme os slides da disciplina (`docs/Double k-means.pdf`). O algoritmo obtém ao mesmo tempo uma partição exclusiva dos objetos em $K$ grupos, uma partição exclusiva das variáveis em $H$ grupos e a matriz de protótipos $G = (g_{kh})$ dos $K \times H$ blocos. A função objetivo minimizada é $W(G, U, V) = \sum_{k=1}^{K}\sum_{h=1}^{H}\sum_{i=1}^{N}\sum_{j=1}^{P} u_{ik}\, v_{jh}\, (x_{ij} - g_{kh})^2$. A otimização alterna os três passos dos slides, sempre nessa ordem, até que nenhum objeto e nenhuma variável mude de grupo:
   1. com $U$ e $V$ fixos, $g_{kh}$ é a média do bloco $kh$: $g_{kh} = \frac{\sum_i \sum_j u_{ik} v_{jh} x_{ij}}{n_k\, n_h}$;
   2. com $G$ e $V$ fixos, cada objeto vai para o grupo $k$ que minimiza $\sum_h \sum_j v_{jh} (x_{ij} - g_{kh})^2$;
   3. com $G$ e $U$ fixos, cada variável vai para o grupo $h$ que minimiza $\sum_k \sum_i u_{ik} (x_{ij} - g_{kh})^2$.
 
   Como nos slides, $G$ não é recalculado entre os passos 2 e 3; a única exceção são os protótipos de grupos que ficaram vazios no passo 2 e foram reposicionados (ver *Tratamento de Grupos Vazios*). O parâmetro `max_iter` é apenas um limite de segurança; o atributo `converged_` indica se a parada ocorreu pelo critério dos slides.
+
+  **Empates nos passos 2 e 3:** os slides definem $u_{ik} = 1$ (e $v_{jh} = 1$) para o grupo de custo mínimo, mas não dizem o que fazer quando dois grupos empatam. Adotou-se a regra da melhora estrita: um objeto (ou variável) só muda de grupo se o novo grupo tiver custo estritamente menor que o do grupo atual; em caso de empate, ele permanece onde está. É a regra do TwoMP (Schepers & Hofmans, 2009) e do k-means de Hartigan & Wong (1979). Com ela, toda mudança de grupo feita pelos passos 2 e 3 reduz $W$ estritamente. Como o número de partições é finito, em aritmética exata o algoritmo não pode voltar a uma partição já visitada, e a parada por "nenhuma transferência" dos slides é sempre atingida. O `max_iter` continua como salvaguarda, por exemplo contra erros de arredondamento no cálculo dos custos.
 
 * **Integração com o Ecossistema Scikit-Learn:** A classe herda de `ClusterMixin` e `BaseEstimator`, nessa ordem, pelo mesmo motivo explicado na seção do Bayesiano Gaussiano em `src/classification/README.md`. O `__init__` apenas guarda os parâmetros (`n_row_clusters` = $K$, `n_col_clusters` = $H$, `max_iter`, `random_state`), e a entrada é verificada com `validate_data`. Os parâmetros são validados no `fit`, que lança um `ValueError` se $K$ não estiver entre 1 e $N$, se $H$ não estiver entre 1 e $P$, ou se `max_iter` não for um inteiro maior ou igual a 1 (mesma restrição do `KMeans` do scikit-learn). Depois do `fit`, os resultados ficam nos atributos:
   * `row_labels_` (também em `labels_`) e `column_labels_`: as partições de objetos ($U$) e de variáveis ($V$);
@@ -30,5 +32,7 @@
 ### Referências
 
 * Vichi, M. (2001). *Double k-means clustering for simultaneous classification of objects and variables.* In: Borra, S., Rocci, R., Vichi, M., Schader, M. (eds.), *Advances in Classification and Data Analysis*, Springer, pp. 43–52. DOI 10.1007/978-3-642-59471-7_6.
+* Hartigan, J. A. & Wong, M. A. (1979). *Algorithm AS 136: A K-Means Clustering Algorithm.* Journal of the Royal Statistical Society, Series C (Applied Statistics), 28(1), 100–108. DOI 10.2307/2346830.
+* Schepers, J. & Hofmans, J. (2009). *TwoMP: A MATLAB graphical user interface for two-mode partitioning.* Behavior Research Methods, 41(2), 507–514. DOI 10.3758/BRM.41.2.507.
 * Prunila, I. & Vichi, M. `drclust` 0.1.1, pacote R. https://cran.r-project.org/package=drclust
 * scikit-learn, `sklearn/cluster/_k_means_common.pyx`. https://github.com/scikit-learn/scikit-learn
