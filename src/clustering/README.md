@@ -5,9 +5,9 @@
   2. com $G$ e $V$ fixos, cada objeto vai para o grupo $k$ que minimiza $\sum_h \sum_j v_{jh} (x_{ij} - g_{kh})^2$;
   3. com $G$ e $U$ fixos, cada variável vai para o grupo $h$ que minimiza $\sum_k \sum_i u_{ik} (x_{ij} - g_{kh})^2$.
 
-  Como nos slides, $G$ não é recalculado entre os passos 2 e 3. O parâmetro `max_iter` é apenas um limite de segurança; o atributo `converged_` indica se a parada ocorreu pelo critério dos slides.
+  Como nos slides, $G$ não é recalculado entre os passos 2 e 3; a única exceção são os protótipos de grupos que ficaram vazios no passo 2 e foram reposicionados (ver *Tratamento de Grupos Vazios*). O parâmetro `max_iter` é apenas um limite de segurança; o atributo `converged_` indica se a parada ocorreu pelo critério dos slides.
 
-* **Integração com o Ecossistema Scikit-Learn:** A classe herda de `ClusterMixin` e `BaseEstimator`, nessa ordem, pelo mesmo motivo explicado na seção do Bayesiano Gaussiano em `src/classification/README.md`. O `__init__` apenas guarda os parâmetros (`n_row_clusters` = $K$, `n_col_clusters` = $H$, `max_iter`, `random_state`), e a entrada é verificada com `validate_data`. Depois do `fit`, os resultados ficam nos atributos:
+* **Integração com o Ecossistema Scikit-Learn:** A classe herda de `ClusterMixin` e `BaseEstimator`, nessa ordem, pelo mesmo motivo explicado na seção do Bayesiano Gaussiano em `src/classification/README.md`. O `__init__` apenas guarda os parâmetros (`n_row_clusters` = $K$, `n_col_clusters` = $H$, `max_iter`, `random_state`), e a entrada é verificada com `validate_data`. Os parâmetros são validados no `fit`, que lança um `ValueError` se $K$ não estiver entre 1 e $N$, se $H$ não estiver entre 1 e $P$, ou se `max_iter` não for um inteiro maior ou igual a 1 (mesma restrição do `KMeans` do scikit-learn). Depois do `fit`, os resultados ficam nos atributos:
   * `row_labels_` (também em `labels_`) e `column_labels_`: as partições de objetos ($U$) e de variáveis ($V$);
   * `prototypes_`: a matriz $G$, de tamanho $K \times H$;
   * `objective_`: o valor final de $W$;
@@ -24,7 +24,7 @@
 
 * **Tratamento de Grupos Vazios:** Os slides não tratam desse caso. A inicialização garante grupos não vazios, mas os passos 2 e 3 podem esvaziar um grupo de objetos ($n_k = 0$) ou de variáveis ($n_h = 0$). Nesse caso, o passo 1 calcularia $0/0$, e o `NaN` resultante corromperia os passos seguintes sem gerar erro. A solução adotada é reposicionar: logo após os passos 2 e 3, cada grupo vazio recebe o objeto (ou a variável) de maior custo em relação ao próprio protótipo, escolhido entre os grupos com pelo menos dois membros. O protótipo do grupo que recebeu o item passa a ser a média desse item em cada grupo da outra partição.
   * **Justificativa:** o custo do item movido só pode diminuir, porque a média minimiza a soma de quadrados, e o grupo doador não fica vazio. Com isso, $W$ não aumenta entre iterações, e toda execução termina com exatamente $K$ grupos de objetos e $H$ grupos de variáveis. Nenhuma execução precisa ser descartada.
-  * **Precedentes:** a mesma regra do "ponto de maior custo" é usada pelo `KMeans` do scikit-learn (`_relocate_empty_clusters_dense`, em `sklearn/cluster/_k_means_common.pyx`). A implementação do double k-means publicada por Prunila & Vichi, o pacote R `drclust` (função `doublekm`), também preenche o grupo vazio logo após a alocação em vez de descartar a execução, com uma variante mais cara: divide em dois o grupo mais heterogêneo.
+  * **Precedentes:** a mesma ideia de preencher o grupo vazio com o ponto de maior custo é usada pelo `KMeans` do scikit-learn (`_relocate_empty_clusters_dense`, em `sklearn/cluster/_k_means_common.pyx`). A implementação do double k-means publicada por Prunila & Vichi, o pacote R `drclust` (função `doublekm`), também preenche o grupo vazio logo após a alocação em vez de descartar a execução, com uma variante mais cara: divide em dois o grupo mais heterogêneo.
   * O atributo `n_relocations_` registra quantos reposicionamentos ocorreram em cada execução. Por segurança, o passo 1 levanta um `RuntimeError` se ainda assim encontrar um bloco vazio.
 
 ### Referências

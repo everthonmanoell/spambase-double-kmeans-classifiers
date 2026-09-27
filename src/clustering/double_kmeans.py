@@ -1,3 +1,5 @@
+import numbers
+
 import numpy as np
 from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.utils import check_random_state
@@ -25,7 +27,8 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
     Args:
         n_row_clusters (int, optional): Number of object groups K. Defaults to 2.
         n_col_clusters (int, optional): Number of variable groups H. Defaults to 2.
-        max_iter (int, optional): Safety limit on iterations. Defaults to 100.
+        max_iter (int, optional): Safety limit on iterations, must be >= 1.
+            Defaults to 100.
         random_state (int, RandomState or None, optional): Seed of the random
             initial partitions. Defaults to None.
     """
@@ -46,7 +49,17 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
 
         Returns:
             self: The fitted estimator.
+
+        Raises:
+            ValueError: If `n_row_clusters`, `n_col_clusters` or `max_iter`
+                is out of range.
         """
+        # Same constraint as scikit-learn's KMeans: an integer >= 1.
+        if not (isinstance(self.max_iter, numbers.Integral) and self.max_iter >= 1):
+            raise ValueError(
+                f"max_iter must be an integer >= 1, got {self.max_iter!r}."
+            )
+
         X = validate_data(self, X, dtype=float)
         n_samples, n_features = X.shape
         K, H = self.n_row_clusters, self.n_col_clusters
