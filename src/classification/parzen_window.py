@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.neighbors import KernelDensity
 
-class ParzenWindowClassifier(BaseEstimator, ClassifierMixin):
+class ParzenWindowClassifier(ClassifierMixin, BaseEstimator):
     """
     Bayesian classifier based on the Parzen window method using KDE.
 
