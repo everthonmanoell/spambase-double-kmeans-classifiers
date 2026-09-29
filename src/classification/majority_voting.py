@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import VotingClassifier
 
-class MajorityVotingClassifier(BaseEstimator, ClassifierMixin):
+class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
     """Majority voting ensemble classifier.
 
     Combines the predictions of the Bayesian Gaussian, Bayesian K-NN, 
