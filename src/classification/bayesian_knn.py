@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.neighbors import KNeighborsClassifier
 
-class BayesianKNNClassifier(BaseEstimator, ClassifierMixin):
+class BayesianKNNClassifier(ClassifierMixin,BaseEstimator):
     """Bayesian classifier based on k-nearest neighbors.
 
     This class encapsulates the scikit-learn KNeighborsClassifier, evaluating 
