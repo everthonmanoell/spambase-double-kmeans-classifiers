@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 
-class CustomLogisticRegression(BaseEstimator, ClassifierMixin):
+class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
     """Scikit-learn-compatible classifier based on logistic regression.
 
     This class wraps the scikit-learn implementation to preserve the project's
