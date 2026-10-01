@@ -29,3 +29,11 @@ seguintes pares de proporções:
 - de `(5%, 95%)` até `(95%, 5%)`;
 - passos de `5%` entre cada divisão;
 - amostragem estratificada em todas as divisões.
+
+
+## Decisões de Arquitetura: Análise Estatística (Friedman e Nemenyi)
+
+- **Fluxo Condicional (Omnibus e Post-hoc):** A implementação consolida o Teste de Friedman e o pós-teste de Nemenyi em uma única função estruturada (`perform_friedman_nemenyi`). Essa decisão garante a aderência à metodologia estatística correta: o teste *post-hoc* de Nemenyi só é acionado se, e somente se, o teste *omnibus* de Friedman rejeitar a hipótese nula global de equivalência entre os modelos ($p < \alpha$, com o padrão $\alpha = 0.05$). Isso impede programaticamente a execução de comparações múltiplas inválidas quando não há diferença global significativa.
+- **Abstração e Generalização por Métrica:** Para atender à exigência de comparar os classificadores usando cada uma das métricas (Taxa de Erro, Precisão, Cobertura, F-measure), a função foi desenhada de forma agnóstica. Ela recebe um dicionário onde as chaves são os modelos e os valores são as distribuições de resultados ($300$ observações provenientes dos $30 \times 10$-folds). Essa abstração evita duplicação de código.
+- **Validação de Entrada e Estruturação de Dados:** A função aplica *fail-fast*, verificando se todos os classificadores possuem o mesmo número exato de execuções (*folds*) antes de processar as estatísticas.
+- **Integração Scipy e Scikit-Posthocs:** O cálculo da estatística de Friedman é delegado à função nativa `scipy.stats.friedmanchisquare`. Para o cálculo de Nemenyi, introduziu-se a biblioteca `scikit-posthocs`. Como esta biblioteca requer um padrão de dados tabular rigoroso, a nossa função encapsula e automatiza a transposição das listas de resultados nativas do Python para um `pandas.DataFrame` estruturado com o *shape* `(n_folds, n_classifiers)`, abstraindo a complexidade da integração.
