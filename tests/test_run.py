@@ -2,7 +2,7 @@ import numpy as np
 from src.utils.dataloader import (
     load_spambase_original, 
     load_spambase_kstar_mock, 
-    get_nested_cv_splitter, 
+    get_nested_cv_splitters, 
     get_learning_curve_splits
 )
 from src.classification.parzen_window import ParzenWindowClassifier

@@ -43,7 +43,7 @@ def test_custom_logistic_regression():
     
     print(f"[OK] Busca finalizada!")
     print(f"     Melhores hiperparâmetros: {grid.best_params_}")
-    print(f"     Melhor F1-macro no treino: {grid.best_score_:.4f}")
+    print(f"     Melhor F1-macro média na validação interna: {grid.best_score_:.4f}")
     
     # Testa as predições com o melhor modelo encontrado
     best_preds = grid.predict(X_test)
