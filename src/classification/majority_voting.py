@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import VotingClassifier
+from sklearn.utils.validation import check_is_fitted
 
 class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
     """Majority voting ensemble classifier.
@@ -14,8 +15,6 @@ class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
     
     def __init__(self, estimators):
         self.estimators = estimators
-        self.model_ = None
-        self.classes_ = None
 
     def fit(self, X, y):
         """Fit the ensemble classifier using hard voting.
@@ -27,8 +26,6 @@ class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
         Returns:
             self: The fitted classifier.
         """
-        # O parâmetro voting='hard' garante o uso da regra da maioria simples
-        # a partir dos rótulos preditos por cada classificador base.
         self.model_ = VotingClassifier(estimators=self.estimators, voting='hard')
         self.model_.fit(X, y)
         self.classes_ = self.model_.classes_
@@ -43,4 +40,5 @@ class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
         Returns:
             numpy.ndarray: Predicted class labels.
         """
+        check_is_fitted(self)
         return self.model_.predict(X)

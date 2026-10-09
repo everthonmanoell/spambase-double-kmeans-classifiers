@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.neighbors import KernelDensity
 
-class ParzenWindowClassifier(BaseEstimator, ClassifierMixin):
+class ParzenWindowClassifier(ClassifierMixin, BaseEstimator):
     """
     Bayesian classifier based on the Parzen window method using KDE.
 
@@ -72,3 +72,13 @@ class ParzenWindowClassifier(BaseEstimator, ClassifierMixin):
             
         # Return the class with the highest posterior probability.
         return self.classes_[np.argmax(log_probs, axis=1)]
+
+    @staticmethod
+    def get_param_grid():
+        """
+        Return the hyperparameter grid for cross-validation searches.
+
+        Returns:
+            A dictionary containing the candidate hyperparameter values.
+        """
+        return {'bandwidth': [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]}
