@@ -1,3 +1,36 @@
+## Decisões de Arquitetura e Hiperparâmetros: Regressão Logística
+
+### 1. Arquitetura e Encapsulamento (Wrapper)
+* **Padronização de Interface:** A classe `CustomLogisticRegression` foi construída como um *wrapper* (encapsulamento) herdando de `BaseEstimator` e `ClassifierMixin`. Essa decisão garante que o modelo nativo do Scikit-Learn tenha exatamente a mesma assinatura e comportamento das classes construídas do zero (como a Janela de Parzen). Isso mantém o script principal do experimento limpo e modular.
+* **Isolamento da Grade de Busca:** A implementação do método `@staticmethod get_param_grid()` acopla o dicionário de hiperparâmetros diretamente à classe do modelo. Isso evita a poluição do script principal com dicionários soltos e garante que a configuração de busca pertença exclusivamente ao classificador correspondente.
+
+### 2. Tratamento de Convergência e Escala
+* **Ajuste de Iterações (`max_iter=10000`):** O conjunto de dados *Spambase* possui 57 atributos contínuos em escalas numéricas muito discrepantes (frequências percentuais versus contagens de comprimento de sequências de letras maiúsculas). O limite padrão de 100 iterações do Scikit-Learn é insuficiente para o algoritmo convergir para o mínimo global nesse cenário. O aumento para 10000 iterações como padrão melhora a possibilidade de convergência matemática correta e evita interrupções por avisos (*warnings*) de limite excedido durante o treinamento.
+
+### 3. Definição da Grade de Busca (Hyperparameter Grid)
+* **Força de Regularização (`C`):** A grade escolhida foi `[0.01, 0.1, 1.0, 10.0, 100.0]`. Utilizou-se uma escala logarítmica para explorar diferentes ordens de grandeza da regularização inversa. O espaço de busca cobre desde um modelo altamente penalizado e protegido contra *overfitting* (`0.01`) até um modelo com flexibilidade quase total para se ajustar aos dados de treinamento (`100.0`).
+* **Penalidade (`penalty='l2'`) e Otimizador (`solver='lbfgs'`):** A penalidade L2 (Ridge) foi fixada por ser a mais robusta e numericamente estável para problemas com múltiplas variáveis contínuas. O otimizador `lbfgs` foi escolhido por ser o algoritmo padrão e mais eficiente em termos de memória para funções com penalidade L2. 
+
+### 4. Dimensionamento do Custo Computacional
+* **Viabilidade da Validação Cruzada Aninhada:** A metodologia do projeto exige uma validação cruzada externa de 30 repetições de 10-folds, com um loop interno de 5-folds nos dados de treino para o ajuste dos hiperparâmetros.
+* **Controle de Explosão Combinatória:** Essa estrutura aninhada gera 1500 execuções base para cada modelo ($30 \times 10 \times 5$). Ao fixar o otimizador e o tipo de penalidade, limitando a grade a 5 valores do parâmetro `C`, o total de treinamentos da Regressão Logística foi contido em 7.500 execuções. A inclusão de outras penalidades (como L1) exigiria a troca de *solvers* e dobraria ou triplicaria o tamanho da grade, tornando o custo computacional inviável para o escopo do experimento.
+
+
+
+## Decisões de Arquitetura: Classificador Bayesiano Baseado em k-Vizinhos
+
+### 1. Justificativa Teórica: A Equivalência Bayesiana
+O projeto exige a implementação de um classificador bayesiano utilizando a estimativa de densidade por k-vizinhos e a estimativa de máxima verossimilhança para a probabilidade a priori das classes $P(\omega_i)$. Matematicamente, a regra de classificação padrão do algoritmo k-NN é idêntica à formulação bayesiana. 
+
+Na estimativa de densidade baseada em vizinhança, a função de verossimilhança é dada por:
+$$p(x \vert{} \omega_i) \approx \frac{k_i}{N_i V}$$
+Onde $k_i$ é o número de vizinhos da classe $\omega_i$ dentro da vizinhança de volume $V$, e $N_i$ é o total de exemplos da classe. Utilizando a estimativa de máxima verossimilhança para a priori ($P(\omega_i) = \frac{N_i}{N}$), e aplicando o Teorema de Bayes para a probabilidade a posteriori:
+$$P(\omega_i \vert{} x) = \frac{p(x \vert{} \omega_i) P(\omega_i)}{p(x)} = \frac{\frac{k_i}{N_i V} \frac{N_i}{N}}{\frac{k}{N V}} = \frac{k_i}{k}$$
+Como resultado, a alocação da amostra à classe com a maior densidade a posteriori equivale diretamente a escolher a classe majoritária entre os $k$ vizinhos. Por esta razão, a classe nativa do Scikit-Learn foi envelopada, pois ela já processa eficientemente a razão $\frac{k_i}{k}$.
+
+### 2. Definição da Grade de Busca (Hyperparameter Grid)
+* **Métrica de Distância (`metric`):** Em estrito atendimento ao documento do projeto, a grade de busca fixará a vizinhança testando as distâncias Euclidiana, City-Block (conhecida como Manhattan na biblioteca) e Chebishev.
+* **Número de Vizinhos (`n_neighbors`):** Optou-se por uma grade de valores ímpares (`[1, 3, 5, 7, 11, 15, 21, 31]`) para prevenir empates em deliberações majoritárias bidimensionais. A progressão não linear permite ao `GridSearchCV` investigar o comportamento do modelo desde contornos de decisão altamente ruidosos ($k=1$) até fronteiras mais suaves e globalizadas ($k=31$), sem inflar o custo da validação cruzada aninhada $30 \times 10$-folds.
 ## Decisões de Arquitetura: Classificador Janela de Parzen
 
 * **Integração com o Ecossistema Scikit-Learn:** A classe customizada `ParzenWindowClassifier` herda de `BaseEstimator` e `ClassifierMixin`. Esta estrutura foi adotada para garantir compatibilidade nativa com o `GridSearchCV`, permitindo que o modelo seja injetado diretamente no pipeline de validação cruzada aninhada ($30 \times 10$-folds) exigido na Questão 2a, automatizando o ajuste da janela $h$ sem a necessidade de loops manuais de busca[cite: 4].
@@ -12,3 +45,10 @@
 * **Regularização da Covariância:** O enunciado não prevê regularização. Com $\lambda > 0$, a covariância usada na densidade deixa de ser a estimativa de MV pura, e o classificador se afasta do enunciado nesse ponto. A regularização foi adotada porque $\hat{\Sigma}_i$ pode ser singular ou quase singular, por exemplo quando uma variável é constante dentro de uma classe. Isso pode acontecer principalmente na versão v2 da base, em que as classes são os $K^*$ clusters. Nesses casos, $\hat{\Sigma}_i^{-1}$ não existe ou é numericamente instável. A densidade passa então a usar $\tilde{\Sigma}_i = \hat{\Sigma}_i + \lambda I$, que é definida positiva para qualquer $\lambda > 0$ e, portanto, inversível. Por isso, o `fit` rejeita $\lambda \leq 0$ com um `ValueError`. Se $\tilde{\Sigma}_i$ ainda assim não for numericamente definida positiva (por exemplo, com $\lambda$ muito pequeno), o `fit` lança um `ValueError` pedindo um $\lambda$ maior.
 * **Cálculo via Decomposição de Cholesky:** Em vez de inverter $\tilde{\Sigma}_i$ explicitamente, o `fit` armazena seu fator de Cholesky $L_i$, com $L_i L_i^\top = \tilde{\Sigma}_i$. Na predição, a distância de Mahalanobis é obtida resolvendo o sistema triangular $L_i z = x - \hat{\mu}_i$ (`solve_triangular`), já que $(x-\hat{\mu}_i)^\top \tilde{\Sigma}_i^{-1}(x-\hat{\mu}_i) = \|z\|^2$. O log-determinante sai da diagonal do fator: $\log|\tilde{\Sigma}_i| = 2\sum_j \log (L_i)_{jj}$. Esse caminho é numericamente mais estável e mais barato do que calcular a inversa e o determinante diretamente.
 * **Regra de Decisão no Espaço Logarítmico:** Como no Parzen, o `.predict()` escolhe $\arg\max_i \left[\log p(x|\omega_i) + \log P(\omega_i)\right]$, já que o denominador da regra de Bayes é comum a todas as classes. O `.predict_proba()` retorna as posteriores $P(\omega_i|x)$ normalizadas com `logsumexp`, o que evita *underflow* das densidades em 57 dimensões. O item v do enunciado pede voto majoritário, que usa os rótulos previstos pelo `.predict()` de cada classificador (voto *hard*), e não essas probabilidades.
+
+
+## Decisões de Arquitetura: Classificador Baseado em Voto Majoritário
+
+- **Estratégia de Votação (Hard Voting):** A classe `MajorityVotingClassifier` atende rigorosamente à exigência de utilizar a regra do voto majoritário a partir dos quatro classificadores base. A configuração `voting='hard'` foi definida no encapsulamento do Scikit-Learn para que a decisão do *ensemble* seja computada com base nas predições categóricas (rótulos finais) emitidas por cada modelo, em oposição à média das probabilidades a posteriori (*soft voting*). A classe designada à amostra é aquela que obtém a maioria simples dos votos.
+- **Injeção de Dependência dos Classificadores:** O classificador de voto majoritário não instancia os algoritmos subjacentes em seu construtor. Em vez disso, recebe a lista estruturada de `estimators`. Esta abordagem arquitetural garante o isolamento da etapa de treinamento: a validação cruzada interna de 5-folds para ajuste de hiperparâmetros é executada individualmente no Bayesiano Gaussiano, K-Vizinhos, Janela de Parzen e Regressão Logística. Apenas os modelos já otimizados são posteriormente injetados no *ensemble* para compor a validação externa.
+- **Resolução Determinística de Empates:** A exigência de combinar exatamente 4 classificadores estabelece um colégio eleitoral par, o que introduz o risco matemático de empates absolutos (ex: dois votos para a classe A, dois votos para a classe B). O uso da implementação nativa do Scikit-Learn garante um desempate determinístico, selecionando sistematicamente a classe com o menor valor numérico ou precedência lexicográfica, preservando a reprodutibilidade metodológica ao longo dos $30 \times 10$-folds.
