@@ -7,6 +7,7 @@ from src.utils.dataloader import (
 )
 from src.classification.parzen_window import ParzenWindowClassifier
 
+
 def main():
     print("=== TESTANDO DATA LOADER ===")
     try:
@@ -29,7 +30,7 @@ def main():
         print(f"     Tamanho do treino a 95%: {len(train_95_idx)} amostras")
 
         # 4. Testando splits de CV aninhada
-        cv = get_nested_cv_splitter()
+        cv = get_nested_cv_splitters()
         n_splits = cv.get_n_splits(X, y)
         print(f"[OK] Validação Cruzada 30x10 instanciada. Total de splits externos: {n_splits}")
 
@@ -56,6 +57,7 @@ def main():
 
     except Exception as e:
         print(f"[ERRO] Falha na Janela de Parzen: {e}")
+
 
 if __name__ == "__main__":
     main()
