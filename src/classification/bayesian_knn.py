@@ -1,10 +1,11 @@
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.pipeline import make_pipeline  
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted, validate_data
 
-class BayesianKNNClassifier(ClassifierMixin,BaseEstimator):
+
+class BayesianKNNClassifier(ClassifierMixin, BaseEstimator):
     """Bayesian classifier based on k-nearest neighbors.
 
     This class wraps scikit-learn's KNeighborsClassifier. With uniform weights,
@@ -19,12 +20,8 @@ class BayesianKNNClassifier(ClassifierMixin,BaseEstimator):
     def __init__(self, n_neighbors=5, metric='euclidean'):
         self.n_neighbors = n_neighbors
         self.metric = metric
-        self.model_ = None
-        self.classes_ = None
 
     def fit(self, X, y):
-        check_is_fitted(self, 'model_')
-        X, y = self._validate_data(X, y)
         """Fits the model based on the k-nearest neighbors.
 
         Args:
@@ -34,8 +31,7 @@ class BayesianKNNClassifier(ClassifierMixin,BaseEstimator):
         Returns:
             self: The fitted classifier.
         """
-
-        X, y = self._validate_data(X, y)
+        X, y = validate_data(self, X, y)
 
         self.model_ = make_pipeline(
             StandardScaler(),
@@ -58,17 +54,17 @@ class BayesianKNNClassifier(ClassifierMixin,BaseEstimator):
             numpy.ndarray: Predicted class labels for each data sample.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)  
+        X = validate_data(self, X, reset=False)
         return self.model_.predict(X)
-        
+
     def predict_proba(self, X):
         """Returns the posterior probabilities for each class.
-        
+
         The probabilities are calculated through the mathematical proportion k_i / k.
 
         Args:
             X (array-like of shape (n_queries, n_features)): Test samples.
-            
+
         Returns:
             numpy.ndarray: Posterior probability estimates.
         """

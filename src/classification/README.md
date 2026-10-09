@@ -1,3 +1,22 @@
+## Decisões de Arquitetura: Classificador Bayesiano Baseado em k-Vizinhos
+
+### 1. Justificativa Teórica: A Equivalência Bayesiana
+O projeto exige a implementação de um classificador bayesiano utilizando a estimativa de densidade por k-vizinhos e a estimativa de máxima verossimilhança para a probabilidade a priori das classes $P(\omega_i)$. Matematicamente, a regra de classificação padrão do algoritmo k-NN é idêntica à formulação bayesiana.
+
+Na estimativa de densidade baseada em vizinhança, a função de verossimilhança é dada por:
+$$p(x\vert{} \omega_i) \approx \frac{k_i}{N_i V}$$
+Onde $k_i$ é o número de vizinhos da classe $\omega_i$ dentro da vizinhança de volume $V$, e $N_i$ é o total de exemplos da classe. O volume $V$ é o mesmo para todas as classes, pois a vizinhança é construída globalmente em torno de $x$, contendo $k$ pontos de todas as classes. Isso garante que, independentemente da métrica (Euclidiana, City-Block ou Chebyshev), os termos $V$, $N$ e $N_i$ se cancelem. Utilizando a estimativa de máxima verossimilhança para a priori ($P(\omega_i) = \frac{N_i}{N}$) e aplicando o Teorema de Bayes:
+$$P(\omega_i \vert{} x) = \frac{p(x \vert{} \omega_i) P(\omega_i)}{p(x)} = \frac{\frac{k_i}{N_i V} \frac{N_i}{N}}{\frac{k}{N V}} = \frac{k_i}{k}$$
+Como resultado, alocar a amostra à classe de maior probabilidade a posteriori equivale a escolher a classe majoritária entre os $k$ vizinhos. Por isso, a classe nativa do Scikit-Learn foi envelopada: com pesos uniformes, seu `predict_proba` já devolve exatamente a razão $\frac{k_i}{k}$.
+
+### 2. Pré-processamento
+As distâncias são calculadas sobre os atributos padronizados (`StandardScaler`), de modo que $V$ é medido no espaço padronizado e nenhum atributo domina a métrica por escala. O `StandardScaler` e o `KNeighborsClassifier` formam um `Pipeline` interno, ajustado dentro do `fit`. Assim, em cada fold da validação cruzada, a média e o desvio-padrão vêm apenas do conjunto de treino, sem vazamento de informação do conjunto de teste.
+
+### 3. Definição da Grade de Busca (Hyperparameter Grid)
+- **Métrica de Distância (`metric`):** Em atendimento ao documento do projeto, a grade testa as distâncias Euclidiana, City-Block (`cityblock` no Scikit-Learn, também chamada de Manhattan) e Chebyshev.
+- **Número de Vizinhos (`n_neighbors`):** Optou-se por uma grade estendida de valores ímpares (`[1, 3, 5, 7, 11, 15, 21, 31, 45, 63, 91]`). É importante notar que $k$ ímpar previne empates apenas em decisões binárias. Como a segunda versão do dataset terá $K^*$ classes obtidas por agrupamento (ex: 3 ou 4), empates na contagem de votos podem ocorrer (ex: $k=3$ com votos 1-1-1, ou $k=5$ com 2-2-1). Nesses casos, a implementação do Scikit-Learn desempata escolhendo a classe de menor rótulo numérico (comportamento herdado do `np.argmax` sobre as classes ordenadas), e não pela distância ao vizinho mais próximo. A progressão não linear permite ao `GridSearchCV` explorar desde contornos ruidosos ($k=1$) até valores acima da ordem de grandeza $\sqrt{N}$ do conjunto de treino ($\approx 58$ a $64$ no Spambase). O limite superior ($k=91$) fica deliberadamente além desse valor, para verificar se uma suavização ainda maior melhora a validação interna.
+
+
 ## Decisões de Arquitetura e Hiperparâmetros: Regressão Logística
 
 ### 1. Arquitetura e Encapsulamento (Wrapper)
