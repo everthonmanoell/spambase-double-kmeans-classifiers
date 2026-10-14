@@ -78,18 +78,22 @@ def run_pair(X, K, H, seeds):
 
 
 def select_best_pair(summary):
-    """Choose (K*, H*) from the silhouette of each pair's best run.
+    """Choose (K*, H*) as the pair with the largest silhouette.
+
+    Ties go to the simplest model: smallest K, then smallest H.
 
     Args:
-        summary (pandas.DataFrame): One row per (K, H), in the order (2, 1), (2, 2), (3, 1), ..., (4, 4), 
-            with columns `K`, `H`, `objective` (W of the best run) and `silhouette`.
+        summary (pandas.DataFrame): One row per (K, H), with columns `K`,
+            `H`, `objective` (W of the best run) and `silhouette`.
 
     Returns:
         tuple: (K*, H*) as Python ints.
     """
-    # TODO(human): pick the pair that maximizes the silhouette and decide
-    # what happens on ties.
-    raise NotImplementedError
+    # Exact ties happen when pairs with the same K reach the same object
+    # partition; the row order of summary does not matter.
+    tied = summary[summary["silhouette"] == summary["silhouette"].max()]
+    best = tied.sort_values(["K", "H"]).iloc[0]
+    return int(best["K"]), int(best["H"])
 
 
 def style_axes(ax):
