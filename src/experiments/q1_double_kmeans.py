@@ -3,8 +3,11 @@
 Runs DoubleKMeans 100 times for each K in {2, 3, 4} and H in {1, ..., K}, keeps the run with 
 the smallest W for each (K, H), computes the silhouette of each pair's object partition and
 picks (K*, H*) by the largest silhouette. 
-For that run it reports the adjusted Rand index against the a priori classes, the prototype 
+For that run it reports the adjusted Rand index against the a priori classes, the prototype
 matrix G, the confusion matrix and the plot of W over the iterations.
+
+The 57 variables are standardized (z-score) before clustering, so W, the
+silhouette and G are all in the standardized scale.
 
 Run from the repository root:
     python -m src.experiments.q1_double_kmeans
@@ -17,6 +20,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 from sklearn.metrics import adjusted_rand_score, silhouette_score
+from sklearn.preprocessing import StandardScaler
 
 from src.clustering.double_kmeans import DoubleKMeans
 from src.utils.dataloader import load_spambase_original
@@ -129,13 +133,28 @@ def plot_silhouette(summary, best_pair, path):
 
 
 def plot_objective_history(model, path):
-    """Line plot of W at the initialization (iteration 0) and each iteration."""
+    """Line plot of W at the initialization (iteration 0) and each iteration.
+
+    If the run stopped at max_iter, the final prototypes are recomputed and
+    `objective_` falls below the last point of the history. It is then drawn
+    as a separate point at the last iteration, so the plot ends at the
+    reported W. The history itself only holds iterations.
+    """
     history = model.objective_history_
+    last = len(history) - 1
 
     fig, ax = plt.subplots(figsize=(7, 3.5), facecolor=SURFACE)
     ax.plot(np.arange(len(history)), history, color=ACCENT, linewidth=2,
             marker="o", markersize=6, markeredgecolor=SURFACE,
             markeredgewidth=2)
+    if not model.converged_:
+        ax.plot(last, model.objective_, linestyle="none", marker="D",
+                markersize=6, markerfacecolor=SURFACE, markeredgecolor=ACCENT,
+                markeredgewidth=2)
+        ax.annotate("W final (protótipos recalculados)",
+                    (last, model.objective_), textcoords="offset points",
+                    xytext=(-10, 0), ha="right", va="center", fontsize=8,
+                    color=TEXT_SECONDARY)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_xlabel("Iteração (0 = inicialização)")
     ax.set_ylabel("Função objetivo W")
@@ -149,6 +168,10 @@ def plot_objective_history(model, path):
 
 def main():
     X, y = load_spambase_original(DATA_PATH)
+    # z-score, as drclust's doublekm does by default: in the original scale,
+    # capital_run_length_total alone holds about 90% of the variance and
+    # would decide W and the silhouette (see README).
+    X = StandardScaler().fit_transform(X)
     feature_names = load_feature_names()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -228,7 +251,8 @@ def main():
 
     print(f"\n(K*, H*) = ({k_star}, {h_star}), ARI = {ari:.4f}")
     if not best.converged_:
-        print("Warning: the selected run stopped at max_iter.")
+        print("Warning: the selected run stopped at max_iter; the plot "
+              "shows the final W as a separate point.")
     print(f"\nG:\n{G}\n\nConfusion matrix:\n{confusion}")
     print(f"\nResults saved to {OUTPUT_DIR}/")
 
