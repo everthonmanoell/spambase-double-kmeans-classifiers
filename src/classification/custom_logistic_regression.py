@@ -1,6 +1,8 @@
-import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils.validation import check_is_fitted, validate_data
 
 class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
     """Scikit-learn-compatible classifier based on logistic regression.
@@ -11,10 +13,7 @@ class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
     def __init__(self, C=1.0, solver='lbfgs', max_iter=10000):
         self.C = C
         self.solver = solver
-        # A high max_iter value is required for convergence on the Spambase dataset.
-        self.max_iter = max_iter 
-        self.model_ = None
-        self.classes_ = None
+        self.max_iter = max_iter
 
     def fit(self, X, y):
         """Fit the logistic regression model.
@@ -26,15 +25,17 @@ class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
         Returns:
             The fitted classifier instance.
         """
-
-        # penalty='l2' is the default with the 'lbfgs' solver, so we don't need to specify it explicitly.
-        self.model_ = LogisticRegression(
-            C=self.C,
-            solver=self.solver,
-            max_iter=self.max_iter,
-            random_state=42
+        X, y = validate_data(self, X, y)
+        self.model_ = make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                C=self.C,
+                solver=self.solver,
+                max_iter=self.max_iter,
+                random_state=42
+            )
         )
-        self.model_.fit(X, y)
+        self.model_.fit(X, y)    
         self.classes_ = self.model_.classes_
         return self
 
@@ -47,6 +48,8 @@ class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
         Returns:
             Predicted class labels.
         """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
         return self.model_.predict(X)
         
     def predict_proba(self, X):
@@ -58,6 +61,8 @@ class CustomLogisticRegression(ClassifierMixin, BaseEstimator):
         Returns:
             Class probabilities, useful for soft majority voting.
         """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
         return self.model_.predict_proba(X)
 
     @staticmethod
