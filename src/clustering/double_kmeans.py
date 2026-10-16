@@ -115,10 +115,11 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
 
     @staticmethod
     def _assign(cost, current_labels):
-        """Move each item to its lowest-cost group only on a strict improvement."""
+        """Move each item to its lowest-cost group only if its cost drops by
+        more than 1e-9, so floating-point noise does not count as improvement."""
         best = np.argmin(cost, axis=1)
         items = np.arange(len(current_labels))
-        improves = cost[items, best] < cost[items, current_labels]
+        improves = cost[items, current_labels] - cost[items, best] > 1e-9
         return np.where(improves, best, current_labels)
 
     @staticmethod
