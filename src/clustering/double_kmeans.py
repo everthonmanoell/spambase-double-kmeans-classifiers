@@ -91,7 +91,10 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
             changed = (np.any(new_row_labels != row_labels)
                        or np.any(new_col_labels != col_labels))
             row_labels, col_labels = new_row_labels, new_col_labels
-            history.append(self._objective(X, G, row_labels, col_labels))
+
+            # Update G for the current partition before saving it in the history.
+            G_opt = self._update_prototypes(X, row_labels, col_labels, K, H)
+            history.append(self._objective(X, G_opt, row_labels, col_labels))
 
             if not changed:
                 converged = True
