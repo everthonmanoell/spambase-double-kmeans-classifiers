@@ -52,9 +52,11 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
         n_samples, n_features = X.shape
         K, H = self.n_row_clusters, self.n_col_clusters
         if not 1 <= K <= n_samples:
-            raise ValueError(f"n_row_clusters must be in [1, {n_samples}], got {K}.")
+            raise ValueError(f"n_row_clusters must be in [1, n_samples = "
+                             f"{n_samples}], got {K}.")
         if not 1 <= H <= n_features:
-            raise ValueError(f"n_col_clusters must be in [1, {n_features}], got {H}.")
+            raise ValueError(f"n_col_clusters must be in [1, n_features = "
+                             f"{n_features}], got {H}.")
 
         rng = check_random_state(self.random_state)
 
