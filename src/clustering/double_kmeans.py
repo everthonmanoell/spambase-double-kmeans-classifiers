@@ -41,7 +41,10 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
 
         Raises:
             ValueError: If `n_row_clusters`, `n_col_clusters` or `max_iter`
-                is out of range.
+                is not an integer in its valid range.
+            RuntimeError: If a group is still empty when the prototypes are
+                updated (a safety check; the relocation of empty groups
+                should prevent it).
         """
         if not (isinstance(self.max_iter, numbers.Integral) and self.max_iter >= 1):
             raise ValueError(
@@ -51,10 +54,12 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
         X = validate_data(self, X, dtype=float)
         n_samples, n_features = X.shape
         K, H = self.n_row_clusters, self.n_col_clusters
-        if not 1 <= K <= n_samples:
-            raise ValueError(f"n_row_clusters must be in [1, {n_samples}], got {K}.")
-        if not 1 <= H <= n_features:
-            raise ValueError(f"n_col_clusters must be in [1, {n_features}], got {H}.")
+        if not (isinstance(K, numbers.Integral) and 1 <= K <= n_samples):
+            raise ValueError(f"n_row_clusters must be an integer in [1, "
+                             f"n_samples = {n_samples}], got {K!r}.")
+        if not (isinstance(H, numbers.Integral) and 1 <= H <= n_features):
+            raise ValueError(f"n_col_clusters must be an integer in [1, "
+                             f"n_features = {n_features}], got {H!r}.")
 
         rng = check_random_state(self.random_state)
 
@@ -91,7 +96,10 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
             changed = (np.any(new_row_labels != row_labels)
                        or np.any(new_col_labels != col_labels))
             row_labels, col_labels = new_row_labels, new_col_labels
-            history.append(self._objective(X, G, row_labels, col_labels))
+
+            # Update G for the current partition before saving it in the history.
+            G_opt = self._update_prototypes(X, row_labels, col_labels, K, H)
+            history.append(self._objective(X, G_opt, row_labels, col_labels))
 
             if not changed:
                 converged = True
@@ -112,10 +120,11 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
 
     @staticmethod
     def _assign(cost, current_labels):
-        """Move each item to its lowest-cost group only on a strict improvement."""
+        """Move each item to its lowest-cost group only if its cost drops by
+        more than 1e-9, so floating-point noise does not count as improvement."""
         best = np.argmin(cost, axis=1)
         items = np.arange(len(current_labels))
-        improves = cost[items, best] < cost[items, current_labels]
+        improves = cost[items, current_labels] - cost[items, best] > 1e-9
         return np.where(improves, best, current_labels)
 
     @staticmethod
