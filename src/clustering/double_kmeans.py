@@ -41,7 +41,10 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
 
         Raises:
             ValueError: If `n_row_clusters`, `n_col_clusters` or `max_iter`
-                is out of range.
+                is not an integer in its valid range.
+            RuntimeError: If a group is still empty when the prototypes are
+                updated (a safety check; the relocation of empty groups
+                should prevent it).
         """
         if not (isinstance(self.max_iter, numbers.Integral) and self.max_iter >= 1):
             raise ValueError(
@@ -51,12 +54,12 @@ class DoubleKMeans(ClusterMixin, BaseEstimator):
         X = validate_data(self, X, dtype=float)
         n_samples, n_features = X.shape
         K, H = self.n_row_clusters, self.n_col_clusters
-        if not 1 <= K <= n_samples:
-            raise ValueError(f"n_row_clusters must be in [1, n_samples = "
-                             f"{n_samples}], got {K}.")
-        if not 1 <= H <= n_features:
-            raise ValueError(f"n_col_clusters must be in [1, n_features = "
-                             f"{n_features}], got {H}.")
+        if not (isinstance(K, numbers.Integral) and 1 <= K <= n_samples):
+            raise ValueError(f"n_row_clusters must be an integer in [1, "
+                             f"n_samples = {n_samples}], got {K!r}.")
+        if not (isinstance(H, numbers.Integral) and 1 <= H <= n_features):
+            raise ValueError(f"n_col_clusters must be an integer in [1, "
+                             f"n_features = {n_features}], got {H!r}.")
 
         rng = check_random_state(self.random_state)
 

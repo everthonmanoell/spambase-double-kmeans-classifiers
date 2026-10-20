@@ -46,7 +46,9 @@ def reference_objective(X, G, rows, cols):
 
 @pytest.mark.parametrize("name, value", [
     ("n_row_clusters", 0), ("n_row_clusters", N_SAMPLES + 1),
+    ("n_row_clusters", 2.5),
     ("n_col_clusters", 0), ("n_col_clusters", N_FEATURES + 1),
+    ("n_col_clusters", 2.0),
     ("max_iter", 0), ("max_iter", -1), ("max_iter", 1.5),
 ])
 def test_invalid_parameters_raise(random_data, name, value):
@@ -74,6 +76,18 @@ def test_fit_predict_returns_row_labels(random_data):
     model = DoubleKMeans(3, 2, random_state=0)
     labels = model.fit_predict(random_data)
     np.testing.assert_array_equal(labels, model.row_labels_)
+
+
+@pytest.mark.parametrize("K, H", [(K, H) for K in (2, 3, 4)
+                                  for H in range(1, K + 1)])
+def test_q1_grid_pairs(random_data, K, H):
+    """Every (K, H) of the Q1 grid, including H = 1 and H = K."""
+    model = DoubleKMeans(K, H, random_state=0).fit(random_data)
+
+    assert model.converged_
+    np.testing.assert_array_equal(np.unique(model.row_labels_), np.arange(K))
+    np.testing.assert_array_equal(np.unique(model.column_labels_), np.arange(H))
+    assert model.objective_history_[-1] == model.objective_
 
 
 # Consistency with the definitions of G and W.
@@ -173,6 +187,20 @@ def test_relocation_never_empties_the_donor():
 
     assert new_rows[5] == 1
     assert np.all(np.bincount(new_rows, minlength=3) >= 1)
+
+
+def test_fit_with_relocation_keeps_invariants(random_data):
+    """A full fit that relocates a group still ends with K and H groups."""
+    K, H = 4, 3
+    # Seed 2 empties a group during the fit on this data.
+    model = DoubleKMeans(K, H, random_state=2).fit(random_data)
+    history = model.objective_history_
+    assert model.n_relocations_ > 0
+
+    np.testing.assert_array_equal(np.unique(model.row_labels_), np.arange(K))
+    np.testing.assert_array_equal(np.unique(model.column_labels_), np.arange(H))
+    assert history[-1] == model.objective_
+    assert np.all(np.diff(history) <= 1e-12 * history[0])
 
 
 def test_update_prototypes_rejects_empty_group(random_data):
