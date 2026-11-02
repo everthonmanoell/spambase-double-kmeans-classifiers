@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+ACTION_PLAN.md
+CHECKLIST.md
+PROJECT_STATUS.md
+QUICK_SUMMARY.md
