@@ -1,5 +1,7 @@
+import json
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedShuffleSplit, StratifiedKFold
 
 def load_spambase_original(filepath="dataset/spambase.data"):
@@ -44,6 +46,76 @@ def load_spambase_kstar_mock(filepath="dataset/spambase.data", k_star=3, random_
     y_mock = rng.integers(0, k_star, size=X.shape[0])
 
     return X, y_mock
+
+def load_spambase_kstar_real(filepath="dataset/spambase.data",
+                             q1_labels_path="results/q1_object_labels.csv",
+                             q1_selection_path="results/q1_selection.json"):
+    """Load Spambase features with K*-clustering labels from Q1 analysis.
+
+    This function loads the real K*-clustering partition discovered by Double k-means
+    in Q1, instead of using mock random labels. The labels are read from the CSV file
+    saved during Q1 evaluation, ensuring exact reproducibility.
+
+    Args:
+        filepath: Path to the Spambase data file.
+        q1_labels_path: Path to q1_object_labels.csv (row_index, original_class, cluster).
+        q1_selection_path: Path to q1_selection.json (metadata including K* and H*).
+
+    Returns:
+        A tuple (X, y_kstar) where:
+        - X: Feature matrix (n_samples, 57), raw values from spambase.data.
+        - y_kstar: Cluster labels from the best Double k-means model (K*=2, H*=2).
+
+    Raises:
+        FileNotFoundError: If q1_labels_path or q1_selection_path do not exist.
+        ValueError: If labels cannot be loaded or have inconsistent shape.
+    """
+    # Load features from original dataset.
+    X, _ = load_spambase_original(filepath)
+
+    # Verify that q1_labels and q1_selection files exist.
+    q1_labels_file = Path(q1_labels_path)
+    q1_selection_file = Path(q1_selection_path)
+
+    if not q1_labels_file.exists():
+        raise FileNotFoundError(
+            f"Q1 labels file not found: {q1_labels_path}\n"
+            f"Run Q1 analysis first: python -m src.analysis.clustering_evaluation"
+        )
+
+    if not q1_selection_file.exists():
+        raise FileNotFoundError(
+            f"Q1 selection metadata not found: {q1_selection_path}\n"
+            f"Run Q1 analysis first: python -m src.analysis.clustering_evaluation"
+        )
+
+    # Load Q1 selection metadata to verify K* and H*.
+    with open(q1_selection_file, 'r') as f:
+        q1_metadata = json.load(f)
+
+    k_star = q1_metadata["K"]
+    h_star = q1_metadata["H"]
+
+    # Load cluster labels from Q1 CSV (preserves row order).
+    df_labels = pd.read_csv(q1_labels_file)
+
+    if df_labels.shape[0] != X.shape[0]:
+        raise ValueError(
+            f"Label count mismatch: CSV has {df_labels.shape[0]} rows, "
+            f"but dataset has {X.shape[0]} rows. Check data integrity."
+        )
+
+    # Extract cluster column and verify it contains only valid cluster indices.
+    y_kstar = df_labels["cluster"].values
+    n_unique_clusters = len(np.unique(y_kstar))
+
+    if n_unique_clusters != k_star:
+        raise ValueError(
+            f"Cluster count mismatch: expected {k_star} clusters (from Q1 metadata), "
+            f"but found {n_unique_clusters} in the labels file."
+        )
+
+    return X, y_kstar
 
 def get_nested_cv_splitters():
     """Create splitters for the nested cross-validation procedure.

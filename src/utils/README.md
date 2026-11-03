@@ -2,14 +2,27 @@
 
 ## Versões do dataset `spambase`
 
-As duas funções de carregamento de dados devem disponibilizar as versões do
-dataset exigidas no cabeçalho da Questão 2:
+Três funções carregam dados em diferentes configurações:
 
-1. **Dataset original:** a variável resposta deve manter as 2 classes
-	originais.
-2. **Dataset com classes baseadas nos clusters:** a variável resposta deve
-	ter um número de classes igual ao número de clusters de objetos `K*`
-	obtido na Questão 1.
+1. **`load_spambase_original()`:** Retorna (X, y) onde y contém as 2 classes originais (0=não-spam, 1=spam).
+
+2. **`load_spambase_kstar_mock()`:** Retorna (X, y_mock) onde y_mock é uma versão aleatória (descontinuada). **Use apenas para testes isolados que não dependem da Q1.**
+
+3. **`load_spambase_kstar_real()`** (novo): Retorna (X, y_kstar) onde y_kstar contém os rótulos do clustering descoberto na Q1 (K*=2, H*=2). 
+   - Lê os rótulos de `results/q1_object_labels.csv` (exato, reprodutível, não re-ajustado).
+   - Valida metadados contra `results/q1_selection.json`.
+   - Levanta `FileNotFoundError` se a Q1 não foi executada ainda.
+   - **Esta é a versão correta para a Q2**, pois usa a partição real descoberta na Q1.
+
+### Diferenças observadas
+
+| Aspecto | Original | K*-Clustering |
+|---------|----------|---------------|
+| **Tamanho Classe 0** | 2.788 (60.6%) | 4.567 (99.3%) |
+| **Tamanho Classe 1** | 1.813 (39.4%) | 34 (0.7%) |
+| **Balanceamento** | Moderado | Muito desbalanceado |
+| **Alinhamento com Q1** | — | ARI = −0.005 (negativo) |
+| **Uso na Q2** | Baseline (referência) | Teste (com clustering) |
 
 ## Particionador de validação cruzada
 
