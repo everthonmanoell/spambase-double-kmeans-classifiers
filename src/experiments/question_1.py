@@ -25,6 +25,14 @@ LOGGER = logging.getLogger(__name__)
 
 @contextmanager
 def _atomic_output(path):
+    """Write binary output to a temporary file and atomically replace destination.
+
+    Args:
+        path (Path): Destination file path.
+
+    Yields:
+        IO[bytes]: Open binary file stream for writing.
+    """
     with tempfile.NamedTemporaryFile(
         mode="wb", dir=path.parent, prefix=f".{path.name}.", delete=False
     ) as stream:
@@ -40,6 +48,15 @@ def _atomic_output(path):
 
 
 def _save_outputs(output_dir, history):
+    """Persist per-pair best NPZ artifacts and the summary CSV.
+
+    Args:
+        output_dir (Path): Directory where summary and NPZ files are written.
+        history (dict): Experiment history dictionary containing ``runs``.
+
+    Returns:
+        pd.DataFrame: Summary table with one row per completed ``(K, H)`` pair.
+    """
     rows = []
     for K, H in Q1_GRID:
         runs = [run for run in history["runs"] if (run["K"], run["H"]) == (K, H)]
@@ -83,8 +100,28 @@ def run_question_1(
     Resume accepts only a checkpoint with the same data and configuration.
     Existing checkpoints are not overwritten unless ``resume=True``.
 
+    Args:
+        filepath (str or Path, optional): Path to the Spambase dataset file.
+            Defaults to "dataset/spambase.data".
+        output_dir (str or Path, optional): Output directory for checkpoints and
+            summaries. Defaults to "results".
+        n_runs (int, optional): Number of seeded runs per (K, H) pair. Defaults
+            to 100.
+        max_iter (int, optional): Maximum iterations per Double k-means run.
+            Defaults to 100.
+        resume (bool, optional): Whether to resume from an existing checkpoint.
+            Defaults to False.
+
     Returns:
-        A DataFrame with the minimum-objective run and convergence rate per pair.
+        pd.DataFrame: Summary DataFrame with the minimum-objective run and
+            convergence rate per (K, H) pair.
+
+    Raises:
+        ValueError: If ``n_runs`` or ``max_iter`` is invalid, if features are
+            non-finite or too small, or if checkpoint metadata mismatches.
+        FileExistsError: If a checkpoint already exists and ``resume=False``.
+        FileNotFoundError: If ``resume=True`` and no checkpoint exists.
+        RuntimeError: If a Double k-means run produces a non-finite objective.
     """
     for name, value in (("n_runs", n_runs), ("max_iter", max_iter)):
         if isinstance(value, bool) or not isinstance(value, numbers.Integral) or value < 1:
@@ -181,6 +218,12 @@ def run_question_1(
 
 
 def main(argv=None):
+    """Parse CLI arguments and execute the Question 1 experiment.
+
+    Args:
+        argv (list[str] or None, optional): Command-line argument list. Defaults
+            to None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default="dataset/spambase.data")
     parser.add_argument("--output-dir", default="results")

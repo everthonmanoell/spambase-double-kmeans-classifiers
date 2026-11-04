@@ -7,13 +7,16 @@ This module orchestrates the nested cross-validation pipeline:
 - Datasets: Original (spam/non-spam) and K*-clustering (from Q1)
 - Metrics: Error, Precision (macro), Recall (macro), F1-measure (macro)
 
-Output: CSV with 3,000 rows (300 outer folds × 2 datasets × 5 classifiers)
+Output: CSV with 3,000 rows (300 outer folds × 2 datasets × 5 classifiers).
+Majority voting uses the individually tuned base estimators from the inner CV.
 """
 
 import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from joblib import Parallel, delayed
+from sklearn.base import clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -36,6 +39,189 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _fit_tuned_majority_voting(X_train, y_train, inner_cv, n_jobs):
+    """Tune each voting member on inner CV, then fit the ensemble on all training data.
+
+    Args:
+        X_train (np.ndarray): Training feature matrix of shape
+            (n_train, n_features).
+        y_train (np.ndarray): Training target labels of shape (n_train,).
+        inner_cv (StratifiedKFold): Inner cross-validation splitter.
+        n_jobs (int): Number of parallel workers for ``GridSearchCV``.
+
+    Returns:
+        tuple[MajorityVotingClassifier, dict[str, dict]]: The fitted majority
+            voting classifier and a dictionary mapping each base classifier
+            name to its selected hyperparameter dictionary.
+
+    Raises:
+        ValueError: If no valid hyperparameter candidates remain for a base
+            classifier.
+    """
+    base_classifiers = [
+        ("GaussianBayes", GaussianBayesClassifier()),
+        ("BayesianKNN", BayesianKNNClassifier()),
+        ("ParzenWindow", ParzenWindowClassifier()),
+        ("LogisticRegression", CustomLogisticRegression()),
+    ]
+    cv_splits = list(inner_cv.split(X_train, y_train))
+    minimum_inner_train_size = min(len(train_indices) for train_indices, _ in cv_splits)
+    selected_estimators = []
+    selected_params = {}
+
+    for classifier_name, classifier in base_classifiers:
+        param_grid = classifier.get_param_grid()
+        if classifier_name == "BayesianKNN":
+            param_grid["n_neighbors"] = [
+                neighbors
+                for neighbors in param_grid["n_neighbors"]
+                if neighbors <= minimum_inner_train_size
+            ]
+        if any(not values for values in param_grid.values()):
+            raise ValueError(
+                f"No valid hyperparameter candidates remain for {classifier_name}."
+            )
+
+        grid_search = GridSearchCV(
+            estimator=classifier,
+            param_grid=param_grid,
+            cv=cv_splits,
+            scoring="f1_macro",
+            n_jobs=n_jobs,
+            error_score="raise",
+        )
+        grid_search.fit(X_train, y_train)
+        selected_estimators.append(
+            (classifier_name, clone(grid_search.best_estimator_))
+        )
+        selected_params[classifier_name] = grid_search.best_params_
+
+    majority_voting = MajorityVotingClassifier(estimators=selected_estimators)
+    majority_voting.fit(X_train, y_train)
+    return majority_voting, selected_params
+
+
+def _evaluate_outer_fold(
+    dataset_name,
+    fold_idx,
+    train_idx,
+    test_idx,
+    X,
+    y,
+    inner_cv,
+    classifiers_config,
+    base_classifiers_config,
+):
+    """Evaluate all 5 classifiers on a single outer fold.
+
+    Tunes the four base classifiers once via inner cross-validation and reuses
+    their best estimators to assemble the ``MajorityVotingClassifier``.
+
+    Args:
+        dataset_name (str): Identifier of the evaluated dataset.
+        fold_idx (int): Sequential outer fold index in [0, 299].
+        train_idx (np.ndarray): Training row indices for this outer fold.
+        test_idx (np.ndarray): Test row indices for this outer fold.
+        X (np.ndarray): Full dataset feature matrix.
+        y (np.ndarray): Full dataset target vector.
+        inner_cv (StratifiedKFold): Inner 5-fold stratified splitter.
+        classifiers_config (list[tuple[str, BaseEstimator]]): Full list of 5
+            ``(name, estimator)`` pairs.
+        base_classifiers_config (list[tuple[str, BaseEstimator]]): List of the
+            first 4 base ``(name, estimator)`` pairs.
+
+    Returns:
+        list[dict]: List of 5 result dictionaries (one per classifier) for the
+            given outer fold.
+    """
+    X_train_outer = X[train_idx]
+    y_train_outer = y[train_idx]
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+
+    repetition = fold_idx // 10
+    fold_in_rep = fold_idx % 10
+
+    cv_splits = list(inner_cv.split(X_train_outer, y_train_outer))
+    minimum_inner_train_size = min(
+        len(train_indices) for train_indices, _ in cv_splits
+    )
+    tuned_estimators = []
+    tuned_params = {}
+    fold_results = []
+
+    for clf_name, clf in classifiers_config:
+        if clf_name == "MajorityVoting":
+            if len(tuned_estimators) == len(base_classifiers_config):
+                best_clf = MajorityVotingClassifier(
+                    estimators=[
+                        (name, clone(est)) for name, est in tuned_estimators
+                    ]
+                )
+                best_clf.fit(X_train_outer, y_train_outer)
+                best_params = dict(tuned_params)
+            else:
+                best_clf, best_params = _fit_tuned_majority_voting(
+                    X_train_outer,
+                    y_train_outer,
+                    inner_cv,
+                    n_jobs=1,
+                )
+            best_f1_inner = np.nan
+        else:
+            param_grid = clf.get_param_grid()
+            if clf_name == "BayesianKNN":
+                param_grid["n_neighbors"] = [
+                    neighbors
+                    for neighbors in param_grid["n_neighbors"]
+                    if neighbors <= minimum_inner_train_size
+                ]
+            grid_search = GridSearchCV(
+                estimator=clf,
+                param_grid=param_grid,
+                cv=cv_splits,
+                scoring="f1_macro",
+                n_jobs=1,
+                verbose=0,
+                error_score="raise",
+            )
+            grid_search.fit(X_train_outer, y_train_outer)
+            best_params = grid_search.best_params_
+            best_clf = grid_search.best_estimator_
+            best_f1_inner = grid_search.best_score_
+            tuned_estimators.append((clf_name, clone(best_clf)))
+            tuned_params[clf_name] = best_params
+
+        y_pred = best_clf.predict(X_test)
+
+        error = 1.0 - accuracy_score(y_test, y_pred)
+        precision = precision_score(
+            y_test, y_pred, average="macro", zero_division=0
+        )
+        recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
+        f1 = f1_score(y_test, y_pred, average="macro", zero_division=0)
+
+        fold_results.append(
+            {
+                "fold_id": fold_idx,
+                "repetition": repetition + 1,
+                "fold_in_rep": fold_in_rep + 1,
+                "dataset": dataset_name,
+                "classifier": clf_name,
+                "error": error,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "best_params": str(best_params),
+                "n_train": len(train_idx),
+                "n_test": len(test_idx),
+                "best_f1_inner": best_f1_inner,
+            }
+        )
+
+    return fold_results
+
+
 def run_nested_cv_experiment(
     output_dir="results",
     n_jobs=1,
@@ -44,14 +230,19 @@ def run_nested_cv_experiment(
     """Run 30×10 nested cross-validation on both datasets with 5 classifiers.
 
     Args:
-        output_dir: Directory where results will be saved.
-        n_jobs: Number of parallel jobs for GridSearchCV.
-        verbose: Verbosity level (0=silent, 1=progress, 2=detailed).
+        output_dir (str or Path, optional): Directory where results will be
+            saved. Defaults to "results".
+        n_jobs (int, optional): Number of parallel jobs across outer folds.
+            Defaults to 1.
+        verbose (int, optional): Verbosity level (0=silent, 1=progress,
+            2=detailed). Defaults to 0.
 
     Returns:
-        A pandas DataFrame with 3,000 rows (300 folds × 2 datasets × 5 classifiers).
-        Columns: fold_id, repetition, fold, dataset, classifier, error, precision,
-                 recall, f1, best_params, n_train, n_test
+        pd.DataFrame: DataFrame with 3,000 rows (300 folds × 2 datasets × 5
+            classifiers) and columns ``fold_id``, ``repetition``,
+            ``fold_in_rep``, ``dataset``, ``classifier``, ``error``,
+            ``precision``, ``recall``, ``f1``, ``best_params``, ``n_train``,
+            ``n_test``, and ``best_f1_inner``.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -111,88 +302,48 @@ def run_nested_cv_experiment(
 
     # Iterate over datasets
     for dataset_name, (X, y) in datasets.items():
-        logger.info(f"\nProcessing dataset: {dataset_name}")
+        logger.info(f"\nProcessing dataset: {dataset_name} (n_jobs={n_jobs})")
+        outer_splits = list(outer_cv.split(X, y))
 
-        # Iterate over outer CV folds
-        for fold_idx, (train_idx, test_idx) in enumerate(
-            outer_cv.split(X, y)
-        ):
-            X_train_outer = X[train_idx]
-            y_train_outer = y[train_idx]
-            X_test = X[test_idx]
-            y_test = y[test_idx]
-
-            # Calculate repetition (30×10 structure)
-            repetition = fold_idx // 10
-            fold_in_rep = fold_idx % 10
-
-            if verbose >= 1 and fold_idx % 10 == 0:
-                logger.info(f"  Repetition {repetition + 1}/30, fold {fold_in_rep + 1}/10...")
-
-            # Iterate over classifiers
-            for clf_name, clf in classifiers_config:
-                try:
-                    # Get param grid for this classifier
-                    param_grid = clf.get_param_grid()
-
-                    # Setup GridSearchCV for hyperparameter tuning (inner CV)
-                    grid_search = GridSearchCV(
-                        estimator=clf,
-                        param_grid=param_grid,
-                        cv=inner_cv,
-                        scoring="f1_macro",
-                        n_jobs=n_jobs,
-                        verbose=0,
+        if n_jobs == 1:
+            for fold_idx, (train_idx, test_idx) in enumerate(outer_splits):
+                repetition = fold_idx // 10
+                fold_in_rep = fold_idx % 10
+                if verbose >= 1 and fold_idx % 10 == 0:
+                    logger.info(
+                        f"  Repetition {repetition + 1}/30, fold {fold_in_rep + 1}/10..."
                     )
-
-                    # Fit on training data (inner CV)
-                    grid_search.fit(X_train_outer, y_train_outer)
-                    best_params = grid_search.best_params_
-
-                    # Get best estimator
-                    best_clf = grid_search.best_estimator_
-
-                    # Predict on test set
-                    y_pred = best_clf.predict(X_test)
-
-                    # Calculate metrics
-                    error = 1.0 - accuracy_score(y_test, y_pred)
-                    precision = precision_score(y_test, y_pred, average="macro", zero_division=0)
-                    recall = recall_score(y_test, y_pred, average="macro", zero_division=0)
-                    f1 = f1_score(y_test, y_pred, average="macro", zero_division=0)
-
-                    # Store result
-                    result = {
-                        "fold_id": fold_idx,
-                        "repetition": repetition + 1,
-                        "fold_in_rep": fold_in_rep + 1,
-                        "dataset": dataset_name,
-                        "classifier": clf_name,
-                        "error": error,
-                        "precision": precision,
-                        "recall": recall,
-                        "f1": f1,
-                        "best_params": str(best_params),
-                        "n_train": len(train_idx),
-                        "n_test": len(test_idx),
-                        "best_f1_inner": grid_search.best_score_,
-                    }
-                    results.append(result)
-                    completed_iterations += 1
-
-                    if verbose >= 2:
-                        logger.info(
-                            f"    {clf_name:20s} | "
-                            f"error={error:.4f} | "
-                            f"f1={f1:.4f}"
-                        )
-
-                except Exception as e:
-                    logger.error(
-                        f"Error in {dataset_name} fold {fold_idx} "
-                        f"classifier {clf_name}: {e}"
-                    )
-                    raise
+                fold_rows = _evaluate_outer_fold(
+                    dataset_name,
+                    fold_idx,
+                    train_idx,
+                    test_idx,
+                    X,
+                    y,
+                    inner_cv,
+                    classifiers_config,
+                    base_classifiers_config,
+                )
+                results.extend(fold_rows)
+                completed_iterations += len(fold_rows)
+        else:
+            fold_batches = Parallel(n_jobs=n_jobs, verbose=10 if verbose >= 1 else 0)(
+                delayed(_evaluate_outer_fold)(
+                    dataset_name,
+                    fold_idx,
+                    train_idx,
+                    test_idx,
+                    X,
+                    y,
+                    inner_cv,
+                    classifiers_config,
+                    base_classifiers_config,
+                )
+                for fold_idx, (train_idx, test_idx) in enumerate(outer_splits)
+            )
+            for fold_rows in fold_batches:
+                results.extend(fold_rows)
+                completed_iterations += len(fold_rows)
 
     logger.info(f"\nCompleted: {completed_iterations}/{total_expected} iterations")
 
@@ -240,7 +391,11 @@ def run_nested_cv_experiment(
 
 
 def main():
-    """Entry point for CLI execution."""
+    """Parse CLI arguments and run the Question 2 nested CV experiment.
+
+    Returns:
+        pd.DataFrame: Results DataFrame returned by ``run_nested_cv_experiment``.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -249,14 +404,14 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="results",
-        help="Directory where results will be saved (default: results/)",
+        default="results/q2",
+        help="Directory where results will be saved (default: results/q2)",
     )
     parser.add_argument(
         "--n-jobs",
         type=int,
-        default=1,
-        help="Number of parallel jobs for GridSearchCV (default: 1)",
+        default=-1,
+        help="Number of parallel jobs for GridSearchCV (default: -1, all CPU cores)",
     )
     parser.add_argument(
         "--verbose",

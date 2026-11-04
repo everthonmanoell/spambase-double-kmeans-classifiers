@@ -21,6 +21,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _markdown_table(frame):
+    """Format a pandas DataFrame as a GitHub-flavored Markdown table.
+
+    Args:
+        frame (pd.DataFrame): Input table to format.
+
+    Returns:
+        str: Markdown-formatted table string.
+    """
     columns = [str(column) for column in frame.columns]
     lines = ["| " + " | ".join(columns) + " |",
              "| " + " | ".join("---" for _ in columns) + " |"]
@@ -32,6 +40,14 @@ def _markdown_table(frame):
 
 
 def _ari_comment(ari):
+    """Return an interpretive summary sentence for an Adjusted Rand Index value.
+
+    Args:
+        ari (float): Adjusted Rand Index score.
+
+    Returns:
+        str: Qualitative interpretation of ``ari``.
+    """
     if np.isclose(ari, 1, rtol=0, atol=1e-12):
         return "As particoes coincidem, desconsiderando a numeracao dos clusters."
     if ari < 0:
@@ -49,6 +65,15 @@ def _ari_comment(ari):
 
 
 def _validate_winner(best, X):
+    """Validate shapes, monotonicity, and reconstruction objective of a Q1 winner.
+
+    Args:
+        best (dict): Winning Double k-means run dictionary.
+        X (np.ndarray): Standardized feature matrix of shape (n_samples, n_features).
+
+    Raises:
+        ValueError: If prototypes, column labels, or objective history are invalid.
+    """
     K, H = best["K"], best["H"]
     columns = np.asarray(best["column_labels"])
     G = np.asarray(best["prototypes"])
@@ -70,6 +95,19 @@ def _validate_winner(best, X):
 
 def _write_report(path, metrics, scores, contingency, sizes, column_sizes, G,
                   plots_dir, results_dir):
+    """Write the Markdown summary report for Question 1.
+
+    Args:
+        path (Path): Output path for the Markdown report.
+        metrics (dict): Summary metrics dictionary for the selected partition.
+        scores (pd.DataFrame): Silhouette and objective table across all pairs.
+        contingency (pd.DataFrame): Contingency table (original class vs cluster).
+        sizes (pd.DataFrame): Object cluster size and fraction table.
+        column_sizes (pd.DataFrame): Variable cluster size table.
+        G (pd.DataFrame): Block prototype matrix table.
+        plots_dir (Path): Directory containing generated Q1 plots.
+        results_dir (Path): Directory containing generated Q1 result files.
+    """
     def link(target):
         return Path(os.path.relpath(target, path.parent)).as_posix()
 
@@ -174,7 +212,24 @@ desta etapa.
 
 def evaluate_clustering(filepath="dataset/spambase.data", results_dir="results",
                         plots_dir="plots", report_path="analysis/Q1_ANALYSIS.md"):
-    """Regenerate silhouettes, evaluate their winner, and save all Q1 analysis."""
+    """Regenerate silhouettes, evaluate their winner, and save all Q1 analysis.
+
+    Args:
+        filepath (str or Path, optional): Path to the Spambase dataset file.
+            Defaults to "dataset/spambase.data".
+        results_dir (str or Path, optional): Directory containing Q1 checkpoints
+            and where evaluation outputs are saved. Defaults to "results".
+        plots_dir (str or Path, optional): Directory where Q1 PNG plots are
+            saved. Defaults to "plots".
+        report_path (str or Path, optional): Path where the Q1 Markdown report
+            is written. Defaults to "analysis/Q1_ANALYSIS.md".
+
+    Returns:
+        dict: Dictionary of summary metrics for the winning partition.
+
+    Raises:
+        ValueError: If the winning partition or original class vector is invalid.
+    """
     results_dir, plots_dir = Path(results_dir), Path(plots_dir)
     scores = analyze_silhouette(filepath, results_dir, plots_dir)
     X, history = _load_analysis_inputs(Path(filepath), results_dir / "q1_full_history.pkl")
@@ -258,6 +313,12 @@ def evaluate_clustering(filepath="dataset/spambase.data", results_dir="results",
 
 
 def main(argv=None):
+    """Parse CLI arguments and run the Question 1 clustering evaluation.
+
+    Args:
+        argv (list[str] or None, optional): Command-line argument list. Defaults
+            to None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default="dataset/spambase.data")
     parser.add_argument("--results-dir", default="results")

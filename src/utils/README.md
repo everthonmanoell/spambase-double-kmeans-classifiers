@@ -43,6 +43,15 @@ seguintes pares de proporções:
 - passos de `5%` entre cada divisão;
 - amostragem estratificada em todas as divisões.
 
+Execute `poetry run python -m src.experiments.learning_curves` para ajustar os
+cinco classificadores nos dois datasets em cada tamanho, com dez repetições, e
+salvar os dados por split, o resumo média/desvio-padrão e dois gráficos. Os
+quatro classificadores base selecionam hiperparâmetros por CV estratificada
+interna com F1 macro; MajorityVoting usa esses parâmetros nos membros do
+ensemble. A curva plota F1 macro de treino/teste com faixa de ±1 desvio-padrão;
+veja
+[Q2_LEARNING_CURVES.md](../../analysis/Q2_LEARNING_CURVES.md).
+
 
 ## Decisões de Arquitetura: Análise Estatística (Friedman e Nemenyi)
 
@@ -56,6 +65,10 @@ seguintes pares de proporções:
 
 - **Abstração por Métrica:** A função é agnóstica à métrica (Taxa de Erro, Precisão, Cobertura, F-measure). Ela recebe um `pandas.DataFrame` com shape `(n_blocos, n_classificadores)`, em que cada coluna é um modelo e cada linha é um bloco, e o nome da métrica é usado apenas no log. Isso evita duplicação de código.
 
-- **Validação de Entrada (*fail-fast*):** A função rejeita entradas que não sejam `DataFrame` (`TypeError`), que contenham NaN, tipicamente falha de um modelo na validação cruzada, ou que estejam vazias (`ValueError`). O Friedman exige ao menos 3 classificadores.
+- **Validação de Entrada (*fail-fast*):** A função rejeita entradas que não sejam `DataFrame` (`TypeError`), que contenham NaN/infinito, que estejam vazias, que tenham menos de dois blocos, colunas repetidas ou `alpha` fora de `(0, 1)`. O Friedman exige ao menos 3 classificadores.
 
-- **Integração Scipy e Scikit-Posthocs:** A estatística de Friedman é delegada a `scipy.stats.friedmanchisquare` e o Nemenyi a `scikit-posthocs` (`posthoc_nemenyi_friedman`), que devolve a matriz de p-valores par a par. Quando o Friedman não rejeita $H_0$, a função retorna `None`.
+- **Integração Scipy e Scikit-Posthocs:** A estatística de Friedman é delegada a `scipy.stats.friedmanchisquare` e o Nemenyi a `scikit-posthocs` (`posthoc_nemenyi_friedman`), que devolve a matriz de p-valores par a par. Quando o Friedman não rejeita $H_0$, o campo `nemenyi_p_values` do resultado é `None`.
+
+- **Retorno:** `perform_friedman_nemenyi` retorna `FriedmanNemenyiResult` com a estatística, p-valor e matriz de Nemenyi; a matriz é `None` quando o teste global não é significativo.
+
+- **Execução Q2:** Rode `python -m src.analysis.statistical_analysis` para calcular ICs de 95% usando as médias das 30 repetições, imprimir métricas e testes no terminal, e salvar os arquivos descritos em [Q2_STATISTICAL_ANALYSIS.md](../../analysis/Q2_STATISTICAL_ANALYSIS.md). Para o Friedman, os 300 folds externos continuam sendo os blocos alinhados, portanto a dependência entre folds deve ser considerada na interpretação.

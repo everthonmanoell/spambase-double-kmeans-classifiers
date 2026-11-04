@@ -21,6 +21,20 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _load_analysis_inputs(filepath, history_path):
+    """Validate Q1 checkpoint integrity and return standardized features.
+
+    Args:
+        filepath (Path): Path to the raw Spambase dataset file.
+        history_path (Path): Path to the saved ``q1_full_history.pkl`` file.
+
+    Returns:
+        tuple[np.ndarray, dict]: Standardized feature matrix ``X`` and the
+            validated Q1 history dictionary.
+
+    Raises:
+        ValueError: If checkpoint metadata, versions, SHA-256 hash, run order,
+            or standardization parameters are invalid.
+    """
     # Pickle must only be loaded from a trusted local experiment.
     with history_path.open("rb") as stream:
         history = pickle.load(stream)
@@ -65,6 +79,15 @@ def _load_analysis_inputs(filepath, history_path):
 
 
 def _heatmap(scores):
+    """Build a Matplotlib heatmap figure for the (K, H) silhouette matrix.
+
+    Args:
+        scores (pd.DataFrame): DataFrame containing ``K``, ``H``, and
+            ``silhouette`` columns.
+
+    Returns:
+        Figure: Rendered Matplotlib figure instance.
+    """
     matrix = scores.pivot(index="K", columns="H", values="silhouette").reindex(
         index=[2, 3, 4], columns=[1, 2, 3, 4]
     )
@@ -94,8 +117,21 @@ def analyze_silhouette(filepath="dataset/spambase.data", results_dir="results",
     retain their original row order and use the saved Q1 standardization.
     Exact silhouette ties are resolved by ascending K, then H.
 
+    Args:
+        filepath (str or Path, optional): Path to the Spambase dataset file.
+            Defaults to "dataset/spambase.data".
+        results_dir (str or Path, optional): Directory containing Q1 artifacts
+            and where silhouette outputs are saved. Defaults to "results".
+        plots_dir (str or Path, optional): Directory where the silhouette
+            heatmap PNG is saved. Defaults to "plots".
+
     Returns:
-        A nine-row DataFrame with the selected run and silhouette per pair.
+        pd.DataFrame: Nine-row DataFrame with the selected run and silhouette
+            score per (K, H) pair.
+
+    Raises:
+        ValueError: If winner cluster labels are invalid.
+        RuntimeError: If a computed silhouette score is non-finite.
     """
     results_dir, plots_dir = Path(results_dir), Path(plots_dir)
     X, history = _load_analysis_inputs(
@@ -153,6 +189,12 @@ def analyze_silhouette(filepath="dataset/spambase.data", results_dir="results",
 
 
 def main(argv=None):
+    """Parse CLI arguments and run the Q1 silhouette analysis.
+
+    Args:
+        argv (list[str] or None, optional): Command-line argument list. Defaults
+            to None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default="dataset/spambase.data")
     parser.add_argument("--results-dir", default="results")

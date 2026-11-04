@@ -9,6 +9,12 @@ from src.experiments.question_1 import _atomic_output
 
 
 def _save_figure(figure, path):
+    """Atomically write a Matplotlib figure to disk as a PNG file.
+
+    Args:
+        figure (Figure): Matplotlib figure instance to render.
+        path (Path): Destination file path.
+    """
     try:
         with _atomic_output(path) as stream:
             figure.savefig(stream, format="png", dpi=160)
@@ -17,7 +23,15 @@ def _save_figure(figure, path):
 
 
 def plot_q1_results(best, contingency, plots_dir):
-    """Save contingency, block prototypes and objective convergence plots."""
+    """Save contingency, block prototypes, and objective convergence plots.
+
+    Args:
+        best (dict): Winning Double k-means run dictionary containing ``K``,
+            ``H``, ``run``, ``prototypes``, and ``objective_history``.
+        contingency (pd.DataFrame): Contingency table comparing original classes
+            and object clusters.
+        plots_dir (str or Path): Output directory where PNG plots are written.
+    """
     plots_dir = Path(plots_dir)
     plots_dir.mkdir(parents=True, exist_ok=True)
 

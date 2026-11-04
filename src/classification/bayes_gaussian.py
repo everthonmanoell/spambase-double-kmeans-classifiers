@@ -8,30 +8,37 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
     """Bayesian classifier with multivariate normal class densities.
 
-    Priors, means and covariances are ML estimates, but the density uses the
-    regularized covariance Sigma_ML + lambda * I, so for lambda > 0 it is no
-    longer a pure ML estimate. Computations use Cholesky factors in log-space.
+    Class priors, means, and covariance matrices use maximum-likelihood
+    estimates (dividing by N_i). A small non-negative diagonal term
+    ``reg_covar`` (default ``1e-6``) is added when computing the Cholesky
+    factorization to guarantee positive definiteness when a class covariance
+    is rank-deficient (e.g. N_i <= d or zero-variance features in small splits).
 
     Args:
-        reg_lambda (float, optional): Diagonal regularization, must be > 0.
-            Defaults to 1e-4.
+        reg_covar (float, optional): Non-negative diagonal stabilization added
+            to each class covariance matrix before Cholesky factorization.
+            Defaults to 1e-6.
     """
 
-    def __init__(self, reg_lambda=1e-4):
-        self.reg_lambda = reg_lambda
+    def __init__(self, reg_covar: float = 1e-6):
+        self.reg_covar = reg_covar
 
     def fit(self, X, y):
-        """Estimate priors, means and covariance Cholesky factors per class.
+        """Estimate class priors, means, covariances, and Cholesky factors.
 
         Args:
             X (array-like of shape (n_samples, n_features)): Training vectors.
             y (array-like of shape (n_samples,)): Target values.
 
         Returns:
-            self: The fitted classifier.
+            GaussianBayesClassifier: The fitted classifier.
+
+        Raises:
+            ValueError: If ``reg_covar`` is negative or if a class covariance
+                matrix is singular or not positive definite.
         """
-        if not self.reg_lambda > 0:
-            raise ValueError(f"reg_lambda must be > 0, got {self.reg_lambda!r}.")
+        if self.reg_covar < 0:
+            raise ValueError(f"reg_covar must be non-negative, got {self.reg_covar}.")
 
         # Also stores n_features_in_ and rejects NaN/inf values.
         X, y = validate_data(self, X, y, dtype=float)
@@ -42,7 +49,10 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
 
         self.priors_ = np.empty(n_classes)
         self.means_ = np.empty((n_classes, n_features))
+        self.covariances_ = np.empty((n_classes, n_features, n_features))
         self.cholesky_factors_ = np.empty((n_classes, n_features, n_features))
+
+        eye = np.eye(n_features)
 
         for i, c in enumerate(self.classes_):
             X_c = X[y == c]
@@ -50,25 +60,45 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
             # ML estimates: P(w_i) = N_i / N; covariance divides by N_i (bias=True).
             self.priors_[i] = len(X_c) / n_samples
             self.means_[i] = X_c.mean(axis=0)
-            cov = np.cov(X_c, rowvar=False, bias=True)
-            cov = cov + self.reg_lambda * np.eye(n_features)
+            centered = X_c - self.means_[i]
+            cov = centered.T @ centered / len(X_c)
+            self.covariances_[i] = cov
+
+            stabilized_cov = cov + self.reg_covar * eye
+
+            if self.reg_covar == 0.0 and np.linalg.matrix_rank(centered) < n_features:
+                raise ValueError(
+                    f"Maximum-likelihood covariance of class {c!r} is singular "
+                    "or not positive definite; the unregularized multivariate "
+                    "Gaussian density is undefined for this training fold."
+                )
 
             try:
-                self.cholesky_factors_[i] = np.linalg.cholesky(cov)
+                self.cholesky_factors_[i] = np.linalg.cholesky(stabilized_cov)
             except np.linalg.LinAlgError as err:
                 raise ValueError(
-                    f"Covariance of class {c!r} is not positive definite with "
-                    f"reg_lambda={self.reg_lambda}. Increase reg_lambda."
+                    f"Maximum-likelihood covariance of class {c!r} is singular "
+                    "or not positive definite; the multivariate Gaussian "
+                    "density is undefined for this training fold."
                 ) from err
 
         return self
 
     def _log_likelihood(self, X, mean, chol):
-        """Compute log p(x | w_i) for every sample, given the class mean and lower 
-        Cholesky factor L (L @ L.T = Sigma)."""
+        """Compute log p(x | w_i) for every sample using a class Cholesky factor.
+
+        Args:
+            X (np.ndarray): Feature matrix of shape (n_samples, n_features).
+            mean (np.ndarray): Class mean vector of shape (n_features,).
+            chol (np.ndarray): Lower Cholesky factor L of shape
+                (n_features, n_features) such that L @ L.T = Sigma.
+
+        Returns:
+            np.ndarray: Log-density values of shape (n_samples,).
+        """
         n_features = X.shape[1]
 
-       # Mahalanobis distance = ||z||^2, where L z = x - mu.
+        # Mahalanobis distance = ||z||^2, where L z = x - mu.
         z = solve_triangular(chol, (X - mean).T, lower=True)
         mahalanobis = np.sum(z ** 2, axis=0)
 
@@ -78,7 +108,15 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
         return -0.5 * (n_features * np.log(2.0 * np.pi) + log_det + mahalanobis)
 
     def _joint_log_likelihood(self, X):
-        """Compute log p(x | w_i) + log P(w_i) for every sample and class."""
+        """Compute log p(x | w_i) + log P(w_i) for every sample and class.
+
+        Args:
+            X (array-like of shape (n_queries, n_features)): Query samples.
+
+        Returns:
+            np.ndarray: Joint log-likelihood matrix of shape
+                (n_queries, n_classes).
+        """
         check_is_fitted(self)
         # reset=False checks that X has the same number of features as in fit.
         X = validate_data(self, X, dtype=float, reset=False)
@@ -119,7 +157,10 @@ class GaussianBayesClassifier(ClassifierMixin, BaseEstimator):
 
     @staticmethod
     def get_param_grid():
-        """Return the `reg_lambda` grid for cross-validation searches."""
-        return {
-            'reg_lambda': [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
-        }
+        """Return the empty hyperparameter grid for cross-validation.
+
+        Returns:
+            dict: Empty dictionary because the maximum-likelihood Gaussian model
+                has no tunable hyperparameters.
+        """
+        return {}
