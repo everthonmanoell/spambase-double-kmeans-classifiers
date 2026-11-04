@@ -1,0 +1,14 @@
+TESTES DE FRIEDMAN E PÓS-TESTE DE NEMENYI
+Alpha: 0.05
+Bloco: fold externo alinhado entre classificadores (300 por dataset).
+
+original_2_classes | Taxa de erro: chi-square=1017.590434, p=5.500985e-219, significativo=True, Nemenyi executado=True
+original_2_classes | Precisão macro: chi-square=1033.164109, p=2.318694e-222, significativo=True, Nemenyi executado=True
+original_2_classes | Recall macro: chi-square=1047.617745, p=1.708828e-225, significativo=True, Nemenyi executado=True
+original_2_classes | F1 macro: chi-square=1008.835891, p=4.342306e-217, significativo=True, Nemenyi executado=True
+kstar_classes | Taxa de erro: chi-square=265.553653, p=2.898263e-56, significativo=True, Nemenyi executado=True
+kstar_classes | Precisão macro: chi-square=176.746108, p=3.726291e-37, significativo=True, Nemenyi executado=True
+kstar_classes | Recall macro: chi-square=307.648953, p=2.425036e-65, significativo=True, Nemenyi executado=True
+kstar_classes | F1 macro: chi-square=298.770800, p=1.995036e-63, significativo=True, Nemenyi executado=True
+
+Nota: folds e repetições se sobrepõem; os p-valores não devem ser interpretados como evidência de generalização para outros datasets.

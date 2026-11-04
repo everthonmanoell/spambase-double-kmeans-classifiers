@@ -46,3 +46,16 @@ class MajorityVotingClassifier(ClassifierMixin, BaseEstimator):
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
         return self.model_.predict(X)
+
+    @staticmethod
+    def get_param_grid():
+        """Return the parameter grid for hyperparameter tuning.
+
+        MajorityVoting ensemble does not have hyperparameters to tune,
+        as it uses fixed hard voting. The base estimators are tuned
+        separately before being passed to the ensemble.
+
+        Returns:
+            dict: Empty parameter grid (no tuning needed).
+        """
+        return {}

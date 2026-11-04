@@ -1,0 +1,2 @@
+ARI = -0.0049496989
+A concordancia ajustada e negativa: esta abaixo da esperada ao acaso sob o modelo de referencia do ARI. Os clusters nao recuperam a particao spam/nao spam.

@@ -1,0 +1,19 @@
+{
+  "K": 2,
+  "H": 2,
+  "best_run_id": 0,
+  "silhouette": 0.6596309439335748,
+  "best_objective": 244486.69834951469,
+  "best_converged": true,
+  "n_iterations": 31,
+  "initial_objective": 262251.38234876684,
+  "ari": -0.00494969888751088,
+  "n_samples": 4601,
+  "n_features": 57,
+  "n_runs_per_pair": 100,
+  "max_iter": 100,
+  "total_runs": 900,
+  "converged_runs": 900,
+  "largest_cluster_fraction": 0.9926103021082373,
+  "dataset_sha256": "b1ef93de71f97714d3d7d4f58fc9f718da7bbc8ac8a150eff2778616a8097b12"
+}

@@ -1,0 +1,12 @@
+{
+  "K": 2,
+  "H": 2,
+  "n_runs": 100,
+  "best_run_id": 0,
+  "best_objective": 244486.69834951469,
+  "best_converged": true,
+  "silhouette": 0.6596309439335748,
+  "metric": "euclidean",
+  "preprocessing": "StandardScaler",
+  "dataset_sha256": "b1ef93de71f97714d3d7d4f58fc9f718da7bbc8ac8a150eff2778616a8097b12"
+}
