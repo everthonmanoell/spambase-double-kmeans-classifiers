@@ -1,0 +1,1285 @@
+% Relatorio do Projeto AM 2026-2 (CIn/UFPE).
+% Compile neste diretorio com: latexmk -pdf relatorio.tex
+% Todos os graficos sao desenhados com pgfplots: os da Questao 1 e as curvas de aprendizagem
+% a partir de ../../results, e os boxplots a partir de dados/boxplots.csv (gerado por gerar_boxplots.py).
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+% English is loaded only for the IEEE reference strings; Portuguese is the main language.
+\usepackage[american,brazilian]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,multirow,array,tabularx}
+\usepackage{siunitx}
+\sisetup{
+  output-decimal-marker = {,},
+  group-separator = {.},
+  group-minimum-digits = 4,
+  group-digits = integer,
+  mode = match,
+  propagate-math-font = true,
+  reset-math-version = false,
+  reset-text-series = false,
+  text-series-to-math = true,
+}
+\usepackage{graphicx}
+\usepackage{caption,subcaption}
+\captionsetup{font=small,labelfont=bf}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,decorations.pathreplacing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots,fillbetween,statistics}
+% Keeps only the table rows whose column #1 equals the string #2.
+\pgfplotsset{discard if not/.style 2 args={x filter/.append code={%
+  \ifnum\pdfstrcmp{\thisrow{#1}}{#2}=0 \else\def\pgfmathresult{inf}\fi}}}
+\usepackage{float}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\usepackage{csquotes}
+% Numbered citations and reference list in the IEEE style (biblatex-ieee).
+\usepackage[backend=biber,style=ieee,maxbibnames=6,minbibnames=1]{biblatex}
+\addbibresource{referencias.bib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tocloft}
+\renewcommand{\cfttoctitlefont}{\hfill\bfseries\MakeUppercase}
+\renewcommand{\cftaftertoctitle}{\hfill\mbox{}}
+% The contents page is pre-textual: no page number (tocloft would force 'plain').
+\tocloftpagestyle{empty}
+
+% Wider gaps between table columns (default: 6pt).
+\setlength{\tabcolsep}{8pt}
+% Ragged-right X column, so narrow cells are not stretched by justification.
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+% Media com meia-amplitude do IC 95%.
+\newcommand{\ci}[2]{\num{#1}\,{\footnotesize$\pm$\,\num{#2}}}
+% Melhor valor de uma coluna.
+\newcommand{\best}[1]{\textbf{#1}}
+% p-valor de Nemenyi nao significativo (alpha = 0,05).
+\newcommand{\ns}[1]{\textbf{\num{#1}}}
+% F-measure de treino / teste na curva de aprendizagem.
+\newcommand{\lc}[2]{\num{#1}\,/\,\num{#2}}
+% Passage still to be written by the team (red box).
+\newcommand{\todoequipe}[1]{%
+  \par\medskip\noindent\fcolorbox{red!70!black}{red!4}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\small\textbf{A completar:} #1}}\par\medskip}
+
+% Learning-curve panel read from the summary CSV: #1 dataset, #2 classifier, #3 panel title.
+% Lines are the mean of the 10 splits; bands are +-1 standard deviation, capped at 1.
+\newcommand{\lcfile}{../../results/learning_curves_summary.csv}
+\newcommand{\lcband}[4]{% #1 dataset, #2 classifier, #3 split (train/test), #4 colour
+  \addplot[name path=up#3, draw=none, forget plot, discard if not={dataset}{#1}, discard if not={classifier}{#2}]
+    table[col sep=comma, x expr=100*\thisrow{train_size},
+          y expr={min(\thisrow{#3_f1_mean}+\thisrow{#3_f1_std},1)}] {\lcfile};
+  \addplot[name path=lo#3, draw=none, forget plot, discard if not={dataset}{#1}, discard if not={classifier}{#2}]
+    table[col sep=comma, x expr=100*\thisrow{train_size},
+          y expr={\thisrow{#3_f1_mean}-\thisrow{#3_f1_std}}] {\lcfile};
+  \addplot[#4, fill opacity=0.18, draw=none, forget plot] fill between[of=up#3 and lo#3];}
+\newcommand{\lcpanel}[3]{%
+  \nextgroupplot[title={#3}]
+  \lcband{#1}{#2}{train}{blue!70!black}
+  \lcband{#1}{#2}{test}{orange!90!black}
+  \addplot[blue!70!black, thick, mark=*, mark size=1.1pt, discard if not={dataset}{#1}, discard if not={classifier}{#2}]
+    table[col sep=comma, x expr=100*\thisrow{train_size}, y=train_f1_mean] {\lcfile};
+  \addplot[orange!90!black, thick, mark=square*, mark size=1.1pt, discard if not={dataset}{#1}, discard if not={classifier}{#2}]
+    table[col sep=comma, x expr=100*\thisrow{train_size}, y=test_f1_mean] {\lcfile};}
+% Full learning-curve figure body: #1 dataset, #2 ymin, #3 y ticks.
+\newcommand{\lcfigure}[3]{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 3, horizontal sep=1.5cm, vertical sep=1.9cm, ylabels at=edge left},
+  scale only axis, width=6.3cm, height=3.9cm,
+  xmin=2, xmax=98, xtick={5,25,50,75,95},
+  ymin=#2, ymax=1.02, ytick={#3},
+  xlabel={Treino (\% da base)}, ylabel={F-measure macro},
+  grid=major, grid style={dashed, gray!30},
+  title style={font=\small\bfseries, yshift=-0.6ex},
+  tick label style={font=\footnotesize}, label style={font=\footnotesize},
+  yticklabel style={/pgf/number format/.cd, fixed, fixed zerofill, precision=1, use comma},
+]
+\lcpanel{#1}{GaussianBayes}{Bayesiano gaussiano}
+\lcpanel{#1}{BayesianKNN}{Bayesiano $k$-NN}
+\lcpanel{#1}{ParzenWindow}{Janela de Parzen}
+\lcpanel{#1}{LogisticRegression}{Regressão logística}
+\lcpanel{#1}{MajorityVoting}{Voto majoritário}
+\nextgroupplot[hide axis, xmin=0, xmax=1, ymin=0, ymax=1,
+  legend style={at={(0.5,0.5)}, anchor=center, draw=gray!60, font=\small, row sep=2pt},
+  legend cell align=left]
+\addlegendimage{blue!70!black, thick, mark=*, mark size=1.3pt}\addlegendentry{Treino (média)}
+\addlegendimage{area legend, draw=none, fill=blue!70!black, fill opacity=0.18}\addlegendentry{Treino $\pm$ 1 desvio-padrão}
+\addlegendimage{orange!90!black, thick, mark=square*, mark size=1.3pt}\addlegendentry{Teste (média)}
+\addlegendimage{area legend, draw=none, fill=orange!90!black, fill opacity=0.18}\addlegendentry{Teste $\pm$ 1 desvio-padrão}
+\end{groupplot}
+\end{tikzpicture}}
+
+% Boxplots of the 300 test folds (Figure 5), from statistics computed by gerar_boxplots.py.
+% Rows are ordered by metric, dataset and classifier: panel k uses rows 5k to 5k+4.
+\pgfplotstableread[col sep=comma]{dados/boxplots.csv}\bptable
+\definecolor{cGB}{HTML}{1F77B4}\definecolor{cKNN}{HTML}{FF7F0E}\definecolor{cPZ}{HTML}{2CA02C}
+\definecolor{cRL}{HTML}{D62728}\definecolor{cVM}{HTML}{9467BD}
+\newcommand{\bpget}[3]{\pgfplotstablegetelem{#1}{#2}\of\bptable\let#3\pgfplotsretval}
+% One box from table row #1 with fill colour #2. The \edef writes the numbers into the
+% \addplot options, so each box keeps its own values.
+\newcommand{\bpbox}[2]{%
+  \bpget{#1}{lower_whisker}\bpLW\bpget{#1}{q1}\bpQA\bpget{#1}{median}\bpMed
+  \bpget{#1}{q3}\bpQC\bpget{#1}{upper_whisker}\bpUW\bpget{#1}{mean}\bpMean
+  \edef\bpcmd{\noexpand\addplot[draw=black, fill=#2!65, boxplot prepared={lower whisker=\bpLW,
+    lower quartile=\bpQA, median=\bpMed, upper quartile=\bpQC, upper whisker=\bpUW,
+    average=\bpMean}] coordinates {};}%
+  \bpcmd}
+\newcommand{\bppanel}[1]{% #1 = first table row of the panel
+  \bpbox{#1}{cGB}\bpbox{\the\numexpr#1+1}{cKNN}\bpbox{\the\numexpr#1+2}{cPZ}%
+  \bpbox{\the\numexpr#1+3}{cRL}\bpbox{\the\numexpr#1+4}{cVM}}
+
+\newcommand{\Sil}{\mathrm{Sil}}
+\newcommand{\ARI}{\mathrm{ARI}}
+
+\hypersetup{
+  pdftitle={Double k-means e classificadores bayesianos, logístico e por voto majoritário na base Spambase},
+  pdfauthor={Bruna Isabel Santos Cruz, Everthon Manoel da Silva Inacio, Ana Carolina Soares de Melo},
+}
+
+\begin{document}
+% Pre-textual pages (cover, abstract, contents) carry no page number but are counted.
+\pagestyle{empty}
+
+%----------------------------------------------------------------------
+% CAPA 
+%----------------------------------------------------------------------
+\begin{titlepage}
+  \centering
+  \includegraphics[width=0.2\textwidth]{imagens/brasao.png}\par
+  \vspace{0.6cm}
+  UNIVERSIDADE FEDERAL DE PERNAMBUCO\par
+  \vspace{0.2cm}
+  CENTRO DE INFORMÁTICA\par
+  \vspace{0.2cm}
+  APRENDIZAGEM DE MÁQUINA -- 2026.2\par
+
+  \vspace*{1.8cm}
+  {\large BRUNA ISABEL SANTOS CRUZ\par
+  \vspace{0.15cm}
+  EVERTHON MANOEL DA SILVA INACIO\par
+  \vspace{0.15cm}
+  ANA CAROLINA SOARES DE MELO\par}
+
+  \vspace*{2.4cm}
+  {\Large\bfseries Double k-means e classificadores bayesianos, logístico e por voto majoritário na base
+  Spambase\par}
+
+  \vspace{1.6cm}
+  \begin{flushright}
+  \begin{minipage}{0.55\textwidth}
+    \small
+    Relatório do projeto da disciplina de Aprendizagem de Máquina do Centro de Informática da Universidade
+    Federal de Pernambuco, elaborado por estudantes de mestrado do CIn/UFPE.
+    \par\vspace{0.6cm}
+    \textbf{Professor} Prof.\ Francisco de A.\ T.\ de Carvalho\par
+  \end{minipage}
+  \end{flushright}
+
+  \vfill
+  {\large Recife\par
+  2026\par}
+\end{titlepage}
+% titlepage resets the counter to 1; the cover still counts as page 1.
+\setcounter{page}{2}
+
+%----------------------------------------------------------------------
+% RESUMO
+%----------------------------------------------------------------------
+\clearpage
+\begin{center}
+  \bfseries\MakeUppercase{Resumo}
+\end{center}
+\vspace{0.5cm}
+
+O presente relatório descreve os experimentos do projeto da disciplina de Aprendizagem de Máquina sobre a base Spambase ($\num{4601}$ e-mails, 57 atributos contínuos). 
+Na Questão~1, o algoritmo double k-means foi executado 100 vezes para cada um dos 9 pares $(K,H)$ com $K\in\{2,3,4\}$ e $H\in\{1,\dots,K\}$; 
+a melhor execução de cada par, segundo a função objetivo, foi comparada pela silhueta, que selecionou $(K^*,H^*)=(2,2)$ ($\Sil=\num{0.6596}$). 
+A partição resultante isola 34 e-mails legítimos com valores extremos em 11 atributos ligados à HP e tem índice de Rand corrigido $\ARI=\num{-0.00495}$ 
+em relação às classes a priori. Na Questão~2, cinco classificadores (bayesiano gaussiano, bayesiano $k$-NN, bayesiano com janela de Parzen, regressão 
+logística e voto majoritário) foram avaliados nas duas versões da base (rótulo original e rótulo dado pelos $K^*$ grupos) por validação cruzada 
+estratificada $30\times10$ com ajuste de hiperparâmetros por validação cruzada interna de 5 folds, intervalos de confiança, testes de Friedman e Nemenyi 
+e curvas de aprendizagem. Na base original, voto majoritário ($F=\num{0.9238}$) e regressão logística ($F=\num{0.9230}$) não diferem significativamente 
+entre si e superam os demais.
+
+%----------------------------------------------------------------------
+% SUMÁRIO
+%----------------------------------------------------------------------
+\clearpage
+\tableofcontents
+
+% Text pages: numbering continues from the pre-textual pages.
+\clearpage
+\pagestyle{plain}
+
+%======================================================================
+\section{Introdução}
+%======================================================================
+
+O projeto possui duas partes, sendo a primeira relativa à Questão~1, de natureza não supervisionada, na qual o double k-means~\cite{vichi2001double} 
+é aplicado para agrupar ao mesmo tempo os objetos e as variáveis da Spambase, o número de grupos de objetos $K^*$ é escolhido pela 
+silhueta~\cite{rousseeuw1987silhouettes} e a partição obtida é comparada com as classes a priori pelo índice de Rand corrigido~\cite{hubert1985comparing}. 
+Já a segunta parte, que trata da Questão~2, de natureza supervisionada, onde cinco classificadores são avaliados e comparados em duas versões da base, 
+uma com o rótulo original (spam/não spam) e outra com o rótulo dado pela partição de $K^*$ grupos da Questão~1.
+
+Atendendo às observações finais do enunciado, o relatório dá destaque a três pontos: a organização dos experimentos que garante uma avaliação sem
+vazamento de informação e uma comparação pareada entre os modelos (Seção~\ref{sec:organizacao}), a descrição dos dados (Seção~\ref{sec:dados}) e 
+a obtenção dos hiperparâmetros (Seção~\ref{sec:hiper}). A Seção~\ref{sec:q1} trata da Questão~1, a Seção~\ref{sec:q2} da Questão~2, a
+Seção~\ref{sec:discussao} discute limitações e a Seção~\ref{sec:conclusao} traz a conclusão do trabalho. Todo o código está no repositório do projeto, 
+além disso, o Apêndice~\ref{app:reproducao} lista os comandos que geram cada resultado.
+
+%======================================================================
+\section{Descrição dos dados}\label{sec:dados}
+%======================================================================
+
+A base Spambase~\cite{hopkins1999spambase}, do repositório UCI, contém $n=\num{4601}$ e-mails, sem valores ausentes, descritos por uma variável 
+resposta binária (1 = spam, 0 = não spam) e por $d=57$ atributos contínuos, que formam os três grupos da Tabela~\ref{tab:atributos}.
+
+\begin{table}[H]
+\centering
+\caption{Grupos de atributos da Spambase.}\label{tab:atributos}
+\small
+\begin{tabularx}{\linewidth}{@{}l c L@{}}
+\toprule
+Grupo & Qtd. & Descrição \\
+\midrule
+\texttt{word\_freq\_*} & 48 & Percentual ($[0,100]$) de palavras do e-mail iguais a uma palavra dada
+  (p.\,ex.\ \textit{make}, \textit{free}, \textit{money}, \textit{hp}, \textit{george}, \textit{650}). \\
+\texttt{char\_freq\_*} & 6 & Percentual ($[0,100]$) de caracteres iguais a \texttt{;}, \texttt{(}, \texttt{[},
+  \texttt{!}, \texttt{\$} e \texttt{\#}. \\
+\texttt{capital\_run\_length\_*} & 3 & Comprimento médio (\textit{average}) e máximo (\textit{longest}) das
+  sequências de letras maiúsculas e número total de maiúsculas (\textit{total}); valores $\ge 1$. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+As características abaixo foram levantadas na base completa e orientaram decisões dos experimentos:
+
+\begin{itemize}
+\item \textbf{Classes moderadamente desbalanceadas:} $\num{2788}$ e-mails não spam (60,6\,\%) e $\num{1813}$ spam
+  (39,4\,\%), razão pela qual todas as partições de treino e teste foram estratificadas.
+\item \textbf{Escalas muito diferentes:} os desvios-padrão dos atributos vão de $\num{0.076}$ a $\num{606.3}$. As
+  frequências ficam quase sempre abaixo de 10, enquanto \texttt{capital\_run\_length\_total} chega a
+  $\num{15841}$ (mediana 95). Métodos baseados em distância ou com penalização dos coeficientes dependem da
+  escala, o que motivou a padronização z-score na Questão~1 e dentro dos modelos $k$-NN e regressão logística na
+  Questão~2.
+\item \textbf{Esparsidade e assimetria:} 77,4\,\% das entradas da matriz são zero, já que 50 dos 57 atributos têm
+  mais de metade dos valores iguais a zero e 19 têm mais de 90\,\%, e a assimetria amostral mediana dos atributos
+  chega a 9,7. A hipótese de normalidade multivariada do classificador gaussiano é, portanto, pouco realista, e em amostras
+  pequenas alguns atributos ficam constantes, o que torna as covariâncias singulares
+  (Seção~\ref{sec:classificadores}).
+\item \textbf{Linhas duplicadas:} há 391 linhas idênticas (atributos e rótulo) a alguma linha anterior. Como a base
+  original foi mantida intacta, cópias idênticas podem cair uma no treino e outra no teste, o que favorece
+  levemente os métodos de vizinhança (Seção~\ref{sec:discussao}).
+\item \textbf{Origem dos e-mails legítimos:} segundo a documentação da base, os e-mails não spam vieram da
+  correspondência de trabalho e pessoal dos autores na Hewlett-Packard, de modo que palavras como
+  \textit{george} e o código de área \textit{650} indicam não spam~\cite{hopkins1999spambase}, fato que
+  explica o grupo de variáveis encontrado na Questão~1.
+\end{itemize}
+
+A segunda versão da base, usada na Questão~2, mantém os mesmos 57 atributos e troca a variável resposta pela
+partição de objetos com $K^*=2$ grupos obtida na Questão~1: $\num{4567}$ objetos (99,26\,\%) no grupo $P_1$ e
+34 (0,74\,\%) no grupo $P_2$ (Seção~\ref{sec:particao}). Essa versão é extremamente desbalanceada: um classificador
+que sempre prediz o grupo majoritário erra apenas 0,74\,\% dos exemplos.
+
+%======================================================================
+\section{Organização dos experimentos}\label{sec:organizacao}
+%======================================================================
+
+A Figura~\ref{fig:pipeline} resume o encadeamento dos experimentos: a Questão~1 usa apenas os atributos e produz os rótulos $y^*$ da segunda versão 
+da base, enquanto e a Questão~2 avalia os classificadores nas duas versões com o mesmo protocolo.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  % Same size for every box and fixed row positions, so both columns line up; flush center avoids
+  % stretched spaces and hyphenation inside the boxes.
+  box/.style={draw, rounded corners=2pt, text width=6.9cm, minimum height=1.15cm, align=flush center,
+    inner sep=3pt, fill=#1},
+  box/.default={white},
+  arr/.style={-{Stealth[length=2.2mm]}, thick}]
+  \def\colR{7.9}  % x of the right column
+  \def\rowh{1.55} % distance between rows
+  \node[box=gray!10] (dados) at (0,0) {\textbf{Spambase}: $\num{4601}\times57$ atributos,\\ rótulo spam/não spam};
+  \node[box] (z) at (0,-\rowh) {Padronização z-score dos 57 atributos\\ (rótulos não usados)};
+  \node[box=blue!8] (dkm) at (0,-2*\rowh) {\textbf{Questão 1}: double k-means, 9 pares $(K,H)$\\
+    $\times$ 100 inicializações (sementes 0 a 99)};
+  \node[box=blue!8] (best) at (0,-3*\rowh) {Melhor execução de cada par:\\ menor $W(\mathbf{G},\mathbf{U},\mathbf{V})$};
+  \node[box=blue!8] (sil) at (0,-4*\rowh) {Silhueta euclidiana dos 9 vencedores;\\ $K^*=\arg\max_{(K,H)}\Sil$};
+  \node[box=blue!8] (ystar) at (0,-5*\rowh) {Partição com $K^*$ grupos $\Rightarrow$ rótulos $y^*$;\\
+    ARI frente ao rótulo original};
+
+  \node[box=orange!10] (versoes) at (\colR,0) {\textbf{Questão 2}: versões $(\mathbf{X}, y)$ e $(\mathbf{X}, y^*)$\\
+    da base, com os mesmos atributos brutos};
+  \node[box=orange!10] (cv) at (\colR,-\rowh) {CV estratificada $30\times10$ (externa);\\
+    ajuste interno por CV de 5 folds};
+  \node[box=orange!10] (metr) at (\colR,-2*\rowh) {5 classificadores, 300 folds de teste:\\
+    erro, precisão, cobertura e F-measure};
+  \node[box=orange!10] (ic) at (\colR,-3*\rowh) {Estimativa pontual e IC 95\,\%\\ (média das 30 repetições)};
+  \node[box=orange!10] (fried) at (\colR,-4*\rowh) {Teste de Friedman e pós-teste de Nemenyi\\ (300 blocos pareados)};
+  \node[box=orange!10] (lc) at (\colR,-5*\rowh) {Curvas de aprendizagem (F-measure):\\
+    treino de 5\,\% a 95\,\%, 10 divisões cada};
+
+  \foreach \a/\b in {dados/z, z/dkm, dkm/best, best/sil, sil/ystar, versoes/cv, cv/metr, metr/ic, ic/fried, fried/lc}
+    \draw[arr] (\a) -- (\b);
+  \draw[arr] ($(dados.east)+(0,0.2)$) -- ($(versoes.west)+(0,0.2)$);
+  \draw[arr] (ystar.east) -- ++(0.5,0) |- ($(versoes.west)+(0,-0.2)$);
+\end{tikzpicture}
+\caption{Encadeamento dos experimentos. A coluna da esquerda produz os rótulos $y^*$ usados na segunda versão da
+base; a coluna da direita é executada igualmente para as duas versões. As curvas de aprendizagem usam divisões
+próprias, independentes da validação cruzada $30\times10$.}\label{fig:pipeline}
+\end{figure}
+
+Os experimentos seguem cinco princípios, adotados para que a avaliação de cada modelo seja correta e a comparação
+entre eles seja justa:
+
+\begin{enumerate}
+\item \textbf{Separação entre seleção e avaliação.} Os hiperparâmetros são escolhidos apenas com os dados de
+  aprendizagem de cada fold externo, por uma validação cruzada interna; o fold de teste só é usado uma vez, para
+  medir o modelo já ajustado. Escolher hiperparâmetros e medir o desempenho nos mesmos dados produz estimativas
+  otimistas~\cite{varma2006bias,cawley2010overfitting}.
+\item \textbf{Pré-processamento dentro do treino.} A padronização usada pelo $k$-NN e pela regressão logística faz
+  parte do próprio modelo: média e desvio são estimados no conjunto em que o modelo é ajustado (cada fold interno
+  na seleção, os 9 folds no reajuste final) e apenas aplicados ao conjunto de validação ou teste.
+\item \textbf{Comparação pareada.} Os cinco classificadores são avaliados exatamente nas mesmas 300 partições
+  externas e, dentro de cada uma, nas mesmas 5 partições internas. As diferenças entre eles refletem os modelos, e
+  não sorteios diferentes, e cada fold externo forma um bloco para o teste de Friedman~\cite{friedman1937ranks} (ver a ressalva na Seção~\ref{sec:friedman}).
+\item \textbf{Estratificação.} Todas as divisões (externas, internas e das curvas de aprendizagem) preservam as
+  proporções das classes, o que reduz a variância das estimativas~\cite{kohavi1995study} e é indispensável na
+  versão com $K^*$ grupos, cuja classe rara tem 34 exemplos.
+\item \textbf{Reprodutibilidade.} Todas as fontes de aleatoriedade têm semente fixa (Tabela~\ref{tab:sementes}) e
+  os resultados brutos de cada execução e de cada fold são salvos em \texttt{results/}.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\caption{Fontes de aleatoriedade e sementes. No double k-means, cada uma das 100 execuções de um par usa uma
+semente; na CV interna das curvas, $r=0,\dots,9$ é o índice da divisão.}\label{tab:sementes}
+\small
+\begin{tabularx}{\linewidth}{@{}l L c@{}}
+\toprule
+Etapa & Procedimento & Semente \\
+\midrule
+Q1, double k-means & Partições iniciais aleatórias de objetos e variáveis & 0 a 99 \\
+Q2, CV externa & \texttt{RepeatedStratifiedKFold}, 10 folds $\times$ 30 repetições & 42 \\
+Q2, CV interna & \texttt{StratifiedKFold}, 5 folds com embaralhamento & 42 \\
+Q2, regressão logística & Semente do otimizador (\texttt{lbfgs} é determinístico) & 42 \\
+Curvas de aprendizagem & \texttt{StratifiedShuffleSplit}, 10 divisões por proporção & 42 \\
+Curvas, CV interna & \texttt{StratifiedKFold} com $\min(5, n_{\min})$ folds & $42+r$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%======================================================================
+\section{Questão 1: double k-means}\label{sec:q1}
+%======================================================================
+
+\subsection{O algoritmo}
+
+O double k-means~\cite{vichi2001double} é um método de agrupamento simultâneo de objetos e variáveis
+(\textit{co-clustering})~\cite{govaert2013coclustering}. Dada a matriz $\mathbf{X}=(x_{ij})$, $n\times d$, ele
+obtém uma partição exclusiva dos objetos em $K$ grupos $P_1,\dots,P_K$ (matriz indicadora $\mathbf{U}=(u_{ik})$),
+uma partição exclusiva das variáveis em $H$ grupos $Q_1,\dots,Q_H$ (matriz indicadora $\mathbf{V}=(v_{jh})$) e uma
+matriz de protótipos $\mathbf{G}=(g_{kh})$, $K\times H$, um valor por bloco, que minimizam
+\begin{equation}
+W(\mathbf{G},\mathbf{U},\mathbf{V}) = \sum_{k=1}^{K}\sum_{h=1}^{H}\sum_{i=1}^{n}\sum_{j=1}^{d}
+  u_{ik}\,v_{jh}\,(x_{ij}-g_{kh})^2 .
+\label{eq:W}
+\end{equation}
+Partindo de partições aleatórias, o algoritmo alterna três passos até que nenhum objeto e nenhuma variável mude de grupo, como foi visto na disciplina:
+\begin{enumerate}
+\item com $\mathbf{U}$ e $\mathbf{V}$ fixos, $g_{kh}=\frac{1}{n_k n_h}\sum_{i}\sum_{j}u_{ik}v_{jh}x_{ij}$ (média do
+  bloco $kh$);
+\item com $\mathbf{G}$ e $\mathbf{V}$ fixos, cada objeto vai para o grupo $k$ que minimiza
+  $\sum_h\sum_j v_{jh}(x_{ij}-g_{kh})^2$;
+\item com $\mathbf{G}$ e $\mathbf{U}$ fixos, cada variável vai para o grupo $h$ que minimiza
+  $\sum_k\sum_i u_{ik}(x_{ij}-g_{kh})^2$.
+\end{enumerate}
+Para o tratamento de empates e de grupos que fiquem vazios, adotou-se na implementação duas regras: (a) Um item só muda de grupo se o custo cair mais 
+de $10^{-9}$ (melhora estrita, como em Hartigan e Wong~\cite{hartigan1979kmeans}), o que impede trocas causadas por arredondamento, e (b) um grupo esvaziado 
+nos passos 2 ou 3 recebe o item de maior custo em relação ao próprio protótipo, escolhido entre os grupos com pelo menos dois membros, a mesma estratégia
+do k-means do scikit-learn. Com essas regras $W$ nunca aumenta, toda execução termina com exatamente $K$ e $H$ grupos e nenhuma precisa ser descartada.
+O limite de 100 iterações é só uma salvaguarda: as 900 execuções convergiram pelo critério dos slides.
+
+\subsection{Protocolo}\label{sec:q1-protocolo}
+
+\begin{itemize}
+\item \textbf{Pré-processamento:} foi realizada a padronização z-score de cada atributo na base completa, pois sem a mesma, $W$ seria
+  dominado pelos atributos \texttt{capital\_run\_length\_*}, cuja variância é milhares de vezes maior que a das frequências, e as variáveis 
+  seriam agrupadas pela escala. O rótulo spam/não spam não entra no agrupamento, de forma que padronizar com a base completa não introduz vazamento.
+\item \textbf{Grade:} $K\in\{2,3,4\}$ e $H\in\{1,\dots,K\}$, isto é, 9 pares: $(2,1)$, $(2,2)$, $(3,1)$, $(3,2)$,
+  $(3,3)$, $(4,1)$, $(4,2)$, $(4,3)$ e $(4,4)$.
+\item \textbf{Repetições:} 100 execuções por par a partir de inicializações aleatórias (sementes 0 a 99), 900 no
+  total. Como o algoritmo só garante um mínimo local, a solução de cada par é a execução de menor $W$ (em caso
+  de empate exato, a de menor semente).
+\item \textbf{Escolha de $K^*$:} $W$ não serve para comparar pares diferentes, porque diminui quando $K$ e $H$ aumentam (há mais protótipos para ajustar). 
+  Consequentemente, calculou-se a silhueta da partição de objetos de cada um dos 9 vencedores e escolheu-se $K^*$ pelo par de maior silhueta. 
+  A silhueta de um objeto $i$ é $s(i)=\frac{b(i)-a(i)}{\max\{a(i),b(i)\}}$, em que $a(i)$ é a distância média de $i$ aos objetos do seu grupo e
+  $b(i)$ a menor distância média de $i$ aos objetos de outro grupo; $\Sil$ é a média de $s(i)$ sobre os $n$ objetos~\cite{rousseeuw1987silhouettes}. 
+  Usou-se a distância euclidiana nos 57 atributos padronizados, o mesmo espaço em que o algoritmo foi executado.
+\item \textbf{Avaliação externa:} índice de Rand corrigido~\cite{hubert1985comparing} entre a partição de
+  objetos com $K^*$ grupos e as classes a priori. Com $n_{ij}$ a tabela de contingência, $a_i$ e $b_j$ seus totais
+  marginais,
+  \begin{equation}
+  \ARI=\frac{\sum_{ij}\binom{n_{ij}}{2}-\Big[\sum_i\binom{a_i}{2}\sum_j\binom{b_j}{2}\Big]\Big/\binom{n}{2}}
+  {\frac12\Big[\sum_i\binom{a_i}{2}+\sum_j\binom{b_j}{2}\Big]-\Big[\sum_i\binom{a_i}{2}\sum_j\binom{b_j}{2}\Big]\Big/\binom{n}{2}} .
+  \end{equation}
+  O ARI vale 1 para partições idênticas e tem valor esperado 0 quando as partições são independentes; valores
+  negativos indicam concordância abaixo da esperada ao acaso.
+\end{itemize}
+
+\subsection{Seleção de \texorpdfstring{$(K,H)$}{(K,H)}}
+
+A Tabela~\ref{tab:q1grade} traz, para cada par, a melhor execução e sua silhueta, e a
+Figura~\ref{fig:silhueta} mostra o gráfico $\Sil\times(K,H)$ pedido no enunciado.
+
+\begin{table}[H]
+\centering
+\caption{Melhor das 100 execuções de cada par $(K,H)$ e silhueta da sua partição de objetos; todas as 900
+execuções convergiram.}\label{tab:q1grade}
+\small
+\begin{tabular}{@{}cc S[table-format=6.2] c c S[table-format=1.4]@{}}
+\toprule
+$K$ & $H$ & {Menor $W$} & Semente & Iterações & {$\Sil$} \\
+\midrule
+2 & 1 & 256513.75 & 0 & 11 & 0.2961 \\
+\textbf{2} & \textbf{2} & \bfseries 244486.70 & \textbf{0} & \textbf{31} & \bfseries 0.6596 \\
+3 & 1 & 254414.01 & 0 & 40 & 0.2515 \\
+3 & 2 & 239421.79 & 82 & 40 & 0.2367 \\
+3 & 3 & 234585.87 & 7 & 30 & 0.1409 \\
+4 & 1 & 253278.68 & 0 & 38 & 0.0484 \\
+4 & 2 & 233358.70 & 3 & 43 & 0.2428 \\
+4 & 3 & 228516.44 & 8 & 26 & 0.1620 \\
+4 & 4 & 227250.88 & 18 & 28 & 0.1775 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.92\linewidth, height=5.6cm,
+  ybar, bar width=16pt, bar shift=0pt,
+  ymin=0, ymax=0.75,
+  xtick={1,...,9},
+  xticklabels={{(2,1)},{(2,2)},{(3,1)},{(3,2)},{(3,3)},{(4,1)},{(4,2)},{(4,3)},{(4,4)}},
+  xlabel={Par $(K,H)$}, ylabel={Silhueta},
+  yticklabel style={/pgf/number format/.cd, fixed, fixed zerofill, precision=1, use comma},
+  ymajorgrids, grid style={dashed, gray!30},
+  nodes near coords,
+  nodes near coords style={font=\scriptsize, /pgf/number format/.cd, fixed, fixed zerofill, precision=4, use comma},
+  enlarge x limits=0.07,
+]
+\addplot[fill=blue!35, draw=blue!60!black] coordinates
+  {(1,0.2961) (3,0.2515) (4,0.2367) (5,0.1409) (6,0.0484) (7,0.2428) (8,0.1620) (9,0.1775)};
+\addplot[fill=orange!70, draw=orange!60!black] coordinates {(2,0.6596)};
+\end{axis}
+\end{tikzpicture}
+\caption{Silhueta da melhor partição (menor $W$) de cada par $(K,H)$. O máximo ocorre em $(2,2)$, logo $K^*=2$
+(e $H^*=2$).}\label{fig:silhueta}
+\end{figure}
+
+O par $(2,2)$ tem silhueta $\num{0.6596}$, mais que o dobro da segunda maior ($\num{0.2961}$, em $(2,1)$), e foi
+selecionado: $K^*=2$. Na escala de interpretação de Kaufman e Rousseeuw~\cite{kaufman1990finding}, $\num{0.66}$ indica uma estrutura
+razoável, enquanto os demais pares, entre $\num{0.05}$ e $\num{0.30}$, ficam nas faixas de estrutura fraca ou
+inexistente. Note também que, como esperado, o menor $W$ cai quando $K$ e $H$ crescem, de $\num{256513.75}$ em $(2,1)$ a $\num{227250.88}$ em $(4,4)$.
+
+As partições dos outros pares ajudam a entender a escolha: com $K\ge3$, o grupo dos 34 e-mails descrito na Seção~\ref{sec:particao} reaparece, inteiro 
+em $(3,2)$ e $(3,3)$ e quase inteiro nos demais, e o restante da base é dividido em dois ou três grupos grandes (por exemplo, $\num{3437}$ e $\num{1130}$ objetos em $(3,2)$). 
+Essa divisão da massa principal não tem separação nítida e derruba a silhueta, que fica entre $\num{0.05}$ e $\num{0.25}$ para $K\ge3$. 
+Já em $(2,1)$, com um único grupo de variáveis, os 34 e-mails ficam diluídos num grupo de $\num{1018}$ objetos, e a silhueta não passa de $\num{0.30}$.
+
+\subsection{Partição selecionada}\label{sec:particao}
+
+A melhor execução de $(K^*,H^*)=(2,2)$ , com semente 0, separa as variáveis em um grupo $Q_1$ com 11 atributos, \textit{hp}, \textit{hpl}, \textit{650}, 
+\textit{lab}, \textit{labs}, \textit{telnet}, \textit{857}, \textit{415}, \textit{85}, \textit{technology} e \textit{direct}, e um grupo $Q_2$ com os 
+outros 46 (37 palavras, os 6 caracteres e os 3 atributos de maiúsculas). Os 11 atributos de $Q_1$ são nomes e números ligados aos laboratórios da HP 
+em Palo Alto (códigos de área 650 e 415), a origem dos e-mails legítimos da base. Os objetos ficam em um grupo $P_1$ com $\num{4567}$ e-mails e um 
+grupo $P_2$ com 34,\footnote{No código e nos arquivos de resultados, os grupos $P_1,P_2$ e $Q_1,Q_2$ aparecem com os rótulos 0 e 1.} cujos protótipos, 
+em unidades de desvio-padrão, formam a matriz $\mathbf{G}$ da Tabela~\ref{tab:G}.
+
+\begin{table}[H]
+\centering
+\caption{Matriz de protótipos dos blocos $\mathbf{G}$ para $(K^*,H^*)=(2,2)$ (atributos padronizados).}\label{tab:G}
+\small
+\begin{tabular}{@{}l S[table-format=-1.4] S[table-format=-1.4] r@{}}
+\toprule
+ & {$Q_1$ (11 variáveis HP)} & {$Q_2$ (46 variáveis)} & Objetos \\
+\midrule
+$P_1$ & -0.0511 & 0.0011 & \num{4567} \\
+$P_2$ & 6.8612 & -0.1444 & 34 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O bloco $P_2\times Q_1$ tem protótipo $\num{6.86}$: os 34 e-mails de $P_2$ usam as 11 palavras da HP, em média, quase sete desvios-padrão acima da 
+média da base, enquanto nas demais variáveis ($Q_2$) ficam ligeiramente abaixo dela ($\num{-0.14}$). O grupo $P_1$, por sua vez, tem protótipos
+próximos de zero nos dois blocos, ou seja, reúne o restante da base sem distinção.
+
+\begin{table}[H]
+\centering
+\caption{Matriz de confusão (contingência) entre a partição de objetos do double k-means e as classes a priori.}\label{tab:confusao}
+\small
+\begin{tabular}{@{}l r r r@{}}
+\toprule
+Classe a priori & $P_1$ & $P_2$ & Total \\
+\midrule
+Não spam (0) & \num{2754} & 34 & \num{2788} \\
+Spam (1) & \num{1813} & 0 & \num{1813} \\
+\midrule
+Total & \num{4567} & 34 & \num{4601} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Quando essa partição é cruzada com as classes a priori (Tabela~\ref{tab:confusao}), os 34 e-mails de $P_2$ são todos não spam e $P_1$ 
+reúne os $\num{1813}$ spam e os outros $\num{2754}$ não spam, o que resulta em um índice de Rand corrigido de $\ARI=\num{-0.00495}$ 
+entre as duas partições.
+
+\todoequipe{Comentário sobre o ARI com Bruna e Everthon. Interpretar o valor $\ARI=\num{-0.00495}$ à luz da Tabela~\ref{tab:confusao} e da 
+matriz $\mathbf{G}$: a.~o que significa um ARI próximo de zero e negativo; b.~por que ele é compatível com uma silhueta alta; 
+c.~o que a partição encontrada revela sobre a estrutura da base.}
+
+Um ARI tão próximo de zero indica que a partição obtida não guarda relação com as classes spam/não spam, pois a concordância entre as duas é praticamente
+a que se esperaria de partições independentes: o único corte feito pelo double k-means passa por dentro da classe não spam, deixando todo o spam 
+misturado ao restante em $P_1$, de modo que a pureza da partição (60,6\,\%) é exatamente a proporção da classe majoritária. O sinal negativo decorre da
+composição de $P_2$, porque um grupo de 34 e-mails sorteados ao acaso teria, em média, cerca de 21 não spam e 13 spam, e separá-lo do restante 
+desfaria cerca de 81~mil pares de e-mails da mesma classe, ao passo que $P_2$, formado apenas por não spam, desfaz $34\times\num{2754}=\num{93636}$ 
+desses pares, o que deixa a concordância com as classes ligeiramente abaixo da esperada ao acaso. 
+
+Esse valor é compatível com a silhueta alta porque os dois índices medem propriedades diferentes: a silhueta é um critério interno, calculado apenas 
+com as distâncias entre os objetos, e é elevada porque $P_2$ está, em média, $\num{6.86}$ desvios-padrão acima da média nas 11 variáveis de $Q_1$
+(Tabela~\ref{tab:G}), o que torna $s(i)$ alto para quase todos os objetos de $P_1$ (Seção~\ref{sec:q1-discussao}), enquanto o ARI é um critério externo, 
+que compara a partição com um rótulo que o algoritmo nunca utilizou. A partição revela, portanto, que a estrutura geométrica dominante na base 
+padronizada não é a divisão entre spam e não spam, mas um pequeno grupo de e-mails internos da HP com uso intenso de termos como \textit{hp}, 
+\textit{hpl}, \textit{650} e \textit{lab}, reflexo da forma como os e-mails legítimos da base foram coletados (Seção~\ref{sec:dados}). A diferença entre 
+as classes está em direções mais sutis do espaço de atributos, que o agrupamento não captura, mas que os classificadores supervisionados da Questão~2 
+exploram, com F-measure macro de $\num{0.923}$ na regressão logística (Tabela~\ref{tab:ic-original}).
+
+A Figura~\ref{fig:convergencia} mostra a função objetivo ao longo das iterações da execução selecionada. $W$ parte
+de $\num{262251.38}$ na partição inicial e decresce monotonamente até $\num{244486.70}$, quando nenhum objeto ou
+variável muda de grupo (iteração 31, que repete o valor da 30). Entre as iterações 11 e 20 há um patamar em que
+$W$ quase não varia, seguido de uma nova queda até a convergência: o algoritmo pode passar várias iterações com
+transferências de pouco ganho antes de encontrar uma reorganização que reduz $W$ de forma apreciável.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.9\linewidth, height=5.6cm,
+  xlabel={Iteração (0 = partição inicial)},
+  ylabel={$W(\mathbf{G},\mathbf{U},\mathbf{V})$},
+  scaled y ticks=false,
+  yticklabel style={/pgf/number format/.cd, fixed, use comma, 1000 sep={.}},
+  xmin=-1, xmax=32,
+  grid=major, grid style={dashed, gray!30},
+]
+\addplot[blue!70!black, mark=*, mark size=1.3pt]
+  table[x=iteration, y=objective, col sep=comma] {../../results/q1_objective_history.csv};
+\end{axis}
+\end{tikzpicture}
+\caption{Função objetivo versus iterações na melhor execução de $(K^*,H^*)=(2,2)$. Cada ponto é $W$ com a
+partição do fim da iteração e os protótipos ótimos para ela.}\label{fig:convergencia}
+\end{figure}
+
+\subsection{Discussão}\label{sec:q1-discussao}
+
+A silhueta escolheu uma partição muito desbalanceada porque, sendo $\Sil$ a média de $s(i)$ sobre todos os
+objetos, 99,26\,\% dos termos dessa média vêm de objetos de $P_1$. Para cada um deles, $a(i)$ é a distância média ao grosso da base,
+e $b(i)$ é a distância média aos 34 objetos de $P_2$, que estão, em média, quase sete desvios-padrão acima da média
+em 11 variáveis (Tabela~\ref{tab:G}); assim, $b(i)$ tende a ser bem maior que $a(i)$ e $s(i)$ fica alto. A
+silhueta premia, portanto, a separação de um pequeno grupo atípico, e não uma divisão equilibrada da base. Esse
+comportamento é coerente com duas limitações do double k-means apontadas nos slides da disciplina, a sensibilidade
+a valores discrepantes e a preferência por grupos compactos e esféricos, e com o fato de a soma de quadrados dar
+peso desproporcional às caudas longas dos atributos esparsos (Seção~\ref{sec:dados}). Para a Questão~2, a
+consequência é que a segunda versão da base pede a distinção entre esses 34 e-mails e o restante, uma tarefa
+diferente e muito mais desbalanceada que a detecção de spam.
+
+Essa tarefa tem, além disso, uma fronteira linear conhecida, porque, na convergência, cada objeto está no grupo de
+menor custo do passo~2, dados $\mathbf{G}$ e $\mathbf{V}$. Com $\mathbf{z}_i$ o vetor padronizado do objeto $i$, $c_k(\mathbf{z}_i)$ o custo
+de colocá-lo no grupo $k$ e $d_h$ o número de variáveis de $Q_h$, os termos $z_{ij}^2$ se cancelam na diferença
+entre os custos dos dois grupos, que é linear em $\mathbf{z}_i$:
+\begin{equation}
+c_1(\mathbf{z}_i)-c_2(\mathbf{z}_i)=\sum_{h=1}^{H}\Big[2\,(g_{2h}-g_{1h})\,S_{ih}-d_h\,\big(g_{2h}^2-g_{1h}^2\big)\Big],
+\qquad S_{ih}=\sum_{j\in Q_h}z_{ij}.
+\label{eq:fronteira}
+\end{equation}
+Com os valores da Tabela~\ref{tab:G}, o objeto vai para $P_2$ se e somente se $S_{i1}-\num{0.021}\,S_{i2}>\num{37.5}$,
+isto é, quando a soma das 11 variáveis da HP padronizadas passa de cerca de 37,5 (em média, mais de 3,4
+desvios-padrão por variável). Aplicada aos dados padronizados, essa regra reproduz exatamente os $\num{4601}$
+rótulos, de modo que as duas classes da versão \texttt{kstar\_classes} são linearmente separáveis no espaço
+padronizado e também no espaço original, já que a padronização é uma transformação afim.
+
+%======================================================================
+\section{Questão 2: classificação supervisionada}\label{sec:q2}
+%======================================================================
+
+\subsection{Versões da base}
+
+\begin{table}[H]
+\centering
+\caption{Versões da base usadas na Questão 2. Os atributos são os 57 originais, sem transformação prévia.}\label{tab:versoes}
+\small
+\begin{tabular}{@{}l l r r@{}}
+\toprule
+Versão & Variável resposta & Classe 0 & Classe 1 \\
+\midrule
+\texttt{original\_2\_classes} & spam/não spam (a priori) & \num{2788} (60,6\,\%) & \num{1813} (39,4\,\%) \\
+\texttt{kstar\_classes} & grupos $P_1$/$P_2$ da Questão~1 ($K^*=2$) & \num{4567} (99,26\,\%) & 34 (0,74\,\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Como $K^*=2$, a segunda versão também é binária, e a sua classe rara tem apenas 3 ou 4 exemplos nos folds externos
+de teste ($\approx$\,460 exemplos) e cerca de 30 nos folds de aprendizagem ($\approx$\,\num{4141} exemplos).
+
+\subsection{Classificadores}\label{sec:classificadores}
+
+Todos os classificadores seguem a interface do scikit-learn~\cite{pedregosa2011scikit}; os quatro primeiros correspondem às regras pedidas no
+enunciado, e o quinto combina os quatro.
+
+\paragraph{i) Bayesiano gaussiano.} Atribui $\mathbf{x}$ à classe $\omega_l$ de maior posteriori
+$P(\omega_l\mid\mathbf{x})\propto p(\mathbf{x}\mid\omega_l)\,P(\omega_l)$, com estimativas de máxima verossimilhança~\cite{duda2001pattern}
+\begin{equation}
+\hat P(\omega_i)=\frac{n_i}{n},\qquad
+\hat{\bm\mu}_i=\frac{1}{n_i}\sum_{\mathbf{x}_k\in\omega_i}\mathbf{x}_k,\qquad
+\hat{\bm\Sigma}_i=\frac{1}{n_i}\sum_{\mathbf{x}_k\in\omega_i}(\mathbf{x}_k-\hat{\bm\mu}_i)(\mathbf{x}_k-\hat{\bm\mu}_i)^\top ,
+\end{equation}
+e densidade normal multivariada. A decisão é tomada em escala logarítmica,
+\begin{equation}
+\hat\omega(\mathbf{x})=\arg\max_i\Big[\ln\hat P(\omega_i)-\tfrac12\ln\big|\tilde{\bm\Sigma}_i\big|
+-\tfrac12(\mathbf{x}-\hat{\bm\mu}_i)^\top\tilde{\bm\Sigma}_i^{-1}(\mathbf{x}-\hat{\bm\mu}_i)\Big],
+\qquad \tilde{\bm\Sigma}_i=\hat{\bm\Sigma}_i+\varepsilon\mathbf{I},
+\end{equation}
+com o determinante e a forma quadrática calculados pela fatoração de Cholesky de $\tilde{\bm\Sigma}_i$. O termo
+$\varepsilon\mathbf{I}$, com $\varepsilon=10^{-6}$ fixo, foi necessário porque a estimativa de máxima
+verossimilhança é singular nas duas versões da base. Em \texttt{kstar\_classes}, a classe rara tem cerca de 30
+exemplos de treino para $d=57$ atributos, e $\operatorname{posto}(\hat{\bm\Sigma}_i)\le n_i-1<d$; além disso, os 34
+e-mails de $P_2$ são todos não spam, só 28 deles são distintos e 29 dos 57 atributos são nulos em todos eles, de
+modo que a covariância estimada com os 34 tem posto 16. Na base original, \texttt{word\_freq\_cs} é não nulo em
+apenas 1 dos $\num{1813}$ e-mails spam, e \texttt{word\_freq\_857} em apenas 2. Sempre que esses exemplos ficam fora
+do treino, o atributo é constante na classe spam e $\hat{\bm\Sigma}_i$ é singular. Isso ocorre em pelo menos 30 dos
+300 folds externos (em cada repetição, o fold cujo teste contém o único spam com \texttt{word\_freq\_cs} não nulo),
+em parte dos folds internos e na maior parte das divisões com treino pequeno da curva de aprendizagem, casos em
+que, sem a correção, a densidade não estaria definida. O valor $\varepsilon=10^{-6}$ é o padrão do parâmetro
+\texttt{reg\_covar} do \texttt{GaussianMixture} do scikit-learn e é muito menor que a menor variância dos
+atributos ($\num{0.076}^2\approx\num{0.0058}$), de modo que só altera de forma apreciável as direções de variância
+nula. Trata-se de uma forma mínima da regularização por encolhimento da
+covariância~\cite{ledoit2004wellconditioned,hastie2009elements} e, como $\varepsilon$ não é ajustado, o
+classificador continua sem hiperparâmetros.
+
+\paragraph{ii) Bayesiano baseado em $k$ vizinhos.} Estimando $p(\mathbf{x}\mid\omega_i)=k_i/(n_iV)$, em que $V$ é
+o volume da menor vizinhança de $\mathbf{x}$ que contém $k$ exemplos de treino e $k_i$ deles são da classe
+$\omega_i$, e $\hat P(\omega_i)=n_i/n$, a regra de Bayes se reduz a $P(\omega_i\mid\mathbf{x})=k_i/k$, isto é,
+ao voto majoritário entre os $k$ vizinhos~\cite{duda2001pattern,cover1967nearest}. A vizinhança é definida
+pela distância euclidiana, city-block ($L_1$) ou Chebyshev ($L_\infty$), calculada sobre os atributos
+padronizados (z-score estimado no conjunto de treino), e tanto essa distância quanto o número de vizinhos $k$ são
+hiperparâmetros.
+
+\paragraph{iii) Bayesiano com janela de Parzen.} A densidade de cada classe é estimada pelo kernel multivariado
+produto com kernel gaussiano univariado e a mesma janela $h$ em todas as dimensões~\cite{parzen1962estimation,duda2001pattern},
+\begin{equation}
+\hat p(\mathbf{x}\mid\omega_i)=\frac{1}{n_i}\sum_{\mathbf{x}_m\in\omega_i}\prod_{j=1}^{d}\frac{1}{h}\,
+\phi\!\left(\frac{x_j-x_{mj}}{h}\right)
+=\frac{1}{n_i(2\pi)^{d/2}h^d}\sum_{\mathbf{x}_m\in\omega_i}\exp\!\left(-\frac{\lVert\mathbf{x}-\mathbf{x}_m\rVert^2}{2h^2}\right),
+\end{equation}
+com $\phi$ a densidade normal padrão e $\hat P(\omega_i)=n_i/n$; a decisão maximiza
+$\ln\hat p(\mathbf{x}\mid\omega_i)+\ln\hat P(\omega_i)$. A janela $h$ é o único hiperparâmetro e, nesta
+implementação, o estimador recebe os atributos na escala original (Seção~\ref{sec:discussao}).
+
+\paragraph{iv) Regressão logística.} Modelo discriminativo
+$P(\omega_1\mid\mathbf{x})=\sigma(\mathbf{w}^\top\mathbf{z}+b)$, em que $\mathbf{z}$ são os atributos padronizados
+no treino e $\sigma$ é a função logística, ajustado por máxima verossimilhança penalizada~\cite{hastie2009elements}:
+$\min_{\mathbf{w},b}\ \tfrac12\lVert\mathbf{w}\rVert^2+C\sum_k\ell(y_k,\mathbf{x}_k)$, com $\ell$ a perda logística,
+otimizador L-BFGS e até $\num{10000}$ iterações~\cite{pedregosa2011scikit}, tendo como hiperparâmetro o
+inverso da força de regularização, $C$.
+
+\paragraph{v) Voto majoritário.} Combina os rótulos preditos pelos quatro classificadores anteriores,
+$\hat\omega(\mathbf{x})=\arg\max_c\sum_{m=1}^{4}\mathbf{1}[\hat\omega_m(\mathbf{x})=c]$~\cite{kuncheva2014combining}.
+Cada membro entra com os hiperparâmetros que ele mesmo selecionou na validação cruzada interna do fold externo
+corrente; o comitê, portanto, não tem hiperparâmetros próprios nem uma busca adicional. Com quatro votantes e duas
+classes pode haver empate de 2 a 2, resolvido em favor do menor rótulo (classe 0), o comportamento do
+\texttt{VotingClassifier} do scikit-learn.
+
+\subsection{Protocolo de avaliação: validação cruzada \texorpdfstring{$30\times10$}{30×10} com ajuste interno}\label{sec:protocolo}
+
+A Figura~\ref{fig:cvaninhada} ilustra o protocolo, executado da mesma forma para as duas versões da base:
+
+\begin{enumerate}
+\item A base é dividida em 10 folds estratificados; o procedimento é repetido 30 vezes com permutações diferentes
+  (\texttt{RepeatedStratifiedKFold}, semente 42), totalizando 300 pares (aprendizagem, teste), com $\num{4140}$ ou
+  $\num{4141}$ exemplos de aprendizagem e 460 ou 461 de teste.
+\item Em cada par, o fold de teste é posto de lado. Os 9 folds de aprendizagem são divididos em 5 folds
+  estratificados (\texttt{StratifiedKFold}, semente 42), e cada combinação de hiperparâmetros da grade é
+  avaliada pela F-measure macro média nesses 5 folds (\texttt{GridSearchCV}). Escolhe-se a combinação de maior
+  média; em caso de empate, a primeira da grade.
+\item O modelo é treinado novamente nos 9 folds de aprendizagem com a combinação escolhida e avaliado uma única
+  vez no fold de teste, nas quatro métricas.
+\item O voto majoritário é montado com os quatro modelos do passo 3, retreinado nos 9 folds e avaliado no mesmo
+  fold de teste.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small]
+  \foreach \i in {0,...,8} {
+    \draw[fill=blue!12] (\i*1.45,0) rectangle ++(1.35,0.6);
+    \node at (\i*1.45+0.675,0.3) {\footnotesize F\the\numexpr\i+1\relax};
+  }
+  \draw[fill=orange!55] (9*1.45,0) rectangle ++(1.35,0.6);
+  \node at (9*1.45+0.675,0.3) {\footnotesize Teste};
+  \node[anchor=south west] at (0,0.7) {\textbf{CV externa}: 10 folds estratificados, repetida 30 vezes (300 folds de teste)};
+  \draw[decorate, decoration={brace, mirror, amplitude=5pt}] (0,-0.1) -- (8*1.45+1.35,-0.1)
+    node[midway, below=6pt] {9 folds de aprendizagem ($\approx\num{4141}$ exemplos)};
+  \foreach \j in {0,...,4} {
+    \pgfmathsetmacro{\x}{\j*2.61}
+    \ifnum\j=4
+      \draw[fill=green!35] (\x,-2.2) rectangle ++(2.51,0.6);
+      \node at (\x+1.255,-1.9) {\footnotesize validação};
+    \else
+      \draw[fill=green!10] (\x,-2.2) rectangle ++(2.51,0.6);
+      \node at (\x+1.255,-1.9) {\footnotesize treino};
+    \fi
+  }
+  \node[anchor=north west, text width=10.4cm] at (0,-2.35) {\textbf{CV interna}: 5 folds estratificados dos 9 folds
+    de aprendizagem; cada fold é usado uma vez como validação. Seleciona $\theta^*$ pela \mbox{F-measure} macro média.};
+  \draw[-{Stealth[length=2.2mm]}, thick] (12.95,-1.9) -- (13.73,-1.9) -- (13.73,-0.1);
+  \node[anchor=north, text width=2.6cm, align=center, font=\footnotesize] at (13.6,-2.35)
+    {reajuste com $\theta^*$ nos 9 folds e avaliação no teste};
+\end{tikzpicture}
+\caption{Validação cruzada com ajuste interno de hiperparâmetros. O fold de teste não participa da escolha de $\theta^*$ nem do ajuste da padronização.}\label{fig:cvaninhada}
+\end{figure}
+
+Por fold externo são 45 combinações de hiperparâmetros (1 do gaussiano, 33 do $k$-NN, 6 da janela de Parzen e 5 da regressão logística) avaliadas 
+em 5 folds internos, isto é, $\num{67500}$ ajustes internos por versão da base, além dos reajustes. Como as mesmas partições externas e internas 
+valem para todos os classificadores, a comparação é pareada, e o ajuste interno evita o viés de seleção que surgiria se se reportasse a melhor média 
+da busca como estimativa de desempenho~\cite{varma2006bias,cawley2010overfitting}; a Tabela~\ref{tab:hiper} mostra que, na versão \texttt{kstar\_classes},
+essa média interna chega a superar a F-measure de teste em mais de um ponto percentual.
+
+\subsection{Métricas}
+
+Em cada fold de teste calculam-se a taxa de erro ($1-$acurácia) e as versões macro da precisão, da cobertura (\textit{recall}) e da F-measure ($F_1$), 
+isto é, a média simples dos valores de cada classe~\cite{sokolova2009systematic}. 
+A média macro foi escolhida porque dá o mesmo peso às duas classes: em \texttt{kstar\_classes}, a taxa de erro e as médias ponderadas seriam 
+dominadas pelo grupo $P_1$ e quase não distinguiriam um bom classificador do que sempre prediz $P_1$ (erro de 0,74\,\%, F-measure macro de
+aproximadamente 0,50), razão pela qual a F-measure macro também foi adotada como critério de seleção de hiperparâmetros.
+
+\subsection{Obtenção dos hiperparâmetros}\label{sec:hiper}
+
+A Tabela~\ref{tab:grades} lista as grades: a do $k$-NN inclui valores ímpares de $k$ (sem empate de votos com duas classes) espaçados de forma 
+aproximadamente geométrica e as três distâncias pedidas no enunciado, enquanto as de $h$ e $C$ cobrem várias ordens de grandeza. 
+O código descarta os valores de $k$ maiores que o menor conjunto de treino interno, mas isso não chegou a ocorrer: mesmo no menor caso 
+(115 exemplos, nas curvas de aprendizagem com 5\,\% da versão \texttt{kstar\_classes}), todos os valores da grade são válidos.
+
+\begin{table}[H]
+\centering
+\caption{Grades de hiperparâmetros. A seleção usa a F-measure macro média na CV interna de 5 folds.}\label{tab:grades}
+\small
+\begin{tabularx}{\linewidth}{@{}l L c@{}}
+\toprule
+Classificador & Hiperparâmetros e valores candidatos & Combinações \\
+\midrule
+Bayesiano gaussiano & nenhum (estimativas de máxima verossimilhança; $\varepsilon=10^{-6}$ fixo) & 1 \\
+Bayesiano $k$-NN & $k\in\{1,3,5,7,11,15,21,31,45,63,91\}$; distância $\in\{$euclidiana, city-block, Chebyshev$\}$ & 33 \\
+Janela de Parzen & $h\in\{0{,}1;\,0{,}5;\,1;\,2;\,5;\,10\}$ & 6 \\
+Regressão logística & $C\in\{0{,}01;\,0{,}1;\,1;\,10;\,100\}$ (penalidade $L_2$, L-BFGS) & 5 \\
+Voto majoritário & nenhum (usa os membros já ajustados no mesmo fold) & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Como a busca é refeita em cada um dos 300 folds externos, cada classificador tem uma distribuição de valores
+escolhidos, resumida na Tabela~\ref{tab:hiper} junto com a F-measure média da melhor combinação na CV interna.
+
+\begin{table}[H]
+\centering
+\caption{Hiperparâmetros selecionados nos 300 folds externos (frequência entre parênteses) e F-measure macro
+média da combinação escolhida na CV interna. Para comparação, a F-measure média de teste está entre colchetes.}\label{tab:hiper}
+\small
+\begin{tabularx}{\linewidth}{@{}l L L@{}}
+\toprule
+Classificador & \texttt{original\_2\_classes} & \texttt{kstar\_classes} \\
+\midrule
+Bayesiano $k$-NN &
+  city-block: $k=5$~(147), $k=7$~(68), $k=1$~(56), $k=3$~(10); euclidiana: $k=1$~(17), $k=3$~(2).
+  Interna \num{0.9086} [teste \num{0.9093}] &
+  euclidiana: $k=1$~(191), $k=11$~(16), $k=3$~(15), outros (8); city-block: $k=1$~(51), $k=11$~(12), outros (7).
+  Interna \num{0.9879} [teste \num{0.9722}] \\
+\addlinespace
+Janela de Parzen &
+  $h=1$~(205), $h=2$~(95). Interna \num{0.8108} [teste \num{0.8221}] &
+  $h=2$~(148), $h=1$~(115), $h=0{,}5$~(19), $h=0{,}1$~(18). Interna \num{0.9504} [teste \num{0.9545}] \\
+\addlinespace
+Regressão logística &
+  $C=100$~(160), $C=10$~(126), $C=1$~(14). Interna \num{0.9226} [teste \num{0.9230}] &
+  $C=1$~(163), $C=0{,}1$~(126), $C=10$~(10), $C=100$~(1). Interna \num{0.9803} [teste \num{0.9762}] \\
+\addlinespace
+Bayesiano gaussiano &
+  sem hiperparâmetros. Interna \num{0.8283} [teste \num{0.8284}] &
+  sem hiperparâmetros. Interna \num{0.8971} [teste \num{0.8952}] \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Algumas observações sobre as escolhas:
+\begin{itemize}
+\item \textbf{$k$-NN.} Na base original, a distância city-block foi escolhida em 281 dos 300 folds, com $k$ entre 5 e 7 na maioria. 
+  A distância $L_1$ soma as diferenças em todas as coordenadas e é menos afetada que a euclidiana por uma única coordenada extrema, o que convém 
+  a atributos esparsos de cauda longa. Na versão   \texttt{kstar\_classes}, predominam $k=1$ (242 folds) e a distância euclidiana (230): com apenas 
+  cerca de 30 exemplos da classe rara no treino, vizinhanças maiores passam a ser dominadas pela classe majoritária, e a distância euclidiana sobre 
+  atributos padronizados é a mesma geometria em que o double k-means definiu os rótulos $y^*$ (Seção~\ref{sec:q1-discussao}). A   distância de Chebyshev, 
+  que considera só a maior diferença entre coordenadas, não foi escolhida em nenhum fold.
+\item \textbf{Janela de Parzen.} As escolhas ficam no meio da grade ($h\in\{1,2\}$ em todos os folds da base original e em 263 da 
+  versão \texttt{kstar\_classes}), longe dos extremos: janelas pequenas tornam a densidade concentrada nos pontos de treino e janelas
+  grandes a tornam quase uniforme.
+\item \textbf{Regressão logística.} Na base original, a busca prefere regularização fraca ($C=100$ em 160 folds, $C=10$ em 126), e, como $C=100$ é 
+  o limite superior da grade, valores maiores poderiam ter sido testados. Na versão \texttt{kstar\_classes}, a regularização é mais 
+  forte ($C\le1$ em 289 folds), o que se explica pela separabilidade linear das duas classes dessa versão (Equação~\ref{eq:fronteira}): 
+  em dados separáveis, a estimativa sem penalização não existe, porque os coeficientes crescem sem limite. Nesse caso é a penalização que define 
+  o hiperplano estimado, e a validação interna preferiu penalizações mais fortes que na base original.
+\item \textbf{Viés da seleção.} Na base original, a F-measure interna da combinação escolhida é praticamente igual à de teste, enquanto, 
+  na versão \texttt{kstar\_classes}, a média interna do $k$-NN (\num{0.9879}) supera a de teste   (\num{0.9722}), porque escolher o máximo 
+  entre 33 candidatos avaliados com poucos exemplos da classe rara favorece combinações com sorte na validação. É exatamente o otimismo que o 
+  protocolo da Seção~\ref{sec:protocolo} evita ao medir o desempenho num fold que não participou da seleção.
+\end{itemize}
+
+\subsection{Estimativas pontuais e intervalos de confiança}\label{sec:ic}
+
+Os 300 valores de cada métrica não são observações independentes: os folds de uma mesma repetição compartilham exemplos de treino, e as 30 repetições
+reutilizam os mesmos dados. Tratar os 300 valores como uma amostra independente subestimaria a variância e estreitaria artificialmente o 
+intervalo~\cite{dietterich1998approximate,nadeau2003inference}. 
+Por isso, para cada classificador e métrica, calculou-se primeiro a média $\bar m_r$ dos 10 folds de cada repetição $r$ 
+(que é, ela própria, uma estimativa por validação cruzada de 10 folds) e, a partir das 30 médias, a estimativa pontual e o intervalo de 
+confiança de 95\,\% pela distribuição $t$ de Student com 29 graus de liberdade:
+\begin{equation}
+\hat m=\frac{1}{30}\sum_{r=1}^{30}\bar m_r,\qquad
+\hat m\pm t_{0{,}975;\,29}\,\frac{s_{\bar m}}{\sqrt{30}},\qquad t_{0{,}975;\,29}\approx\num{2.045},
+\end{equation}
+em que $s_{\bar m}$ é o desvio-padrão amostral das 30 médias. As Tabelas~\ref{tab:ic-original}
+e~\ref{tab:ic-kstar} apresentam os resultados, e a Figura~\ref{fig:boxplots} a distribuição dos valores por fold.
+
+\begin{table}[H]
+\centering
+\caption{\texttt{original\_2\_classes}: estimativa pontual $\pm$ meia-amplitude do IC 95\,\% (30 repetições), com
+precisão, cobertura e F-measure em média macro e o melhor valor de cada métrica em negrito.}\label{tab:ic-original}
+\small
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l c c c c@{}}
+\toprule
+Classificador & Taxa de erro & Precisão & Cobertura & F-measure \\
+\midrule
+Bayesiano gaussiano & \ci{0.1705}{0.0004} & \ci{0.8362}{0.0004} & \ci{0.8507}{0.0004} & \ci{0.8284}{0.0004} \\
+Bayesiano $k$-NN & \ci{0.0855}{0.0009} & \ci{0.9163}{0.0009} & \ci{0.9046}{0.0010} & \ci{0.9093}{0.0009} \\
+Janela de Parzen & \ci{0.1686}{0.0010} & \ci{0.8254}{0.0011} & \ci{0.8201}{0.0013} & \ci{0.8221}{0.0011} \\
+Regressão logística & \ci{0.0730}{0.0004} & \ci{0.9265}{0.0005} & \best{\ci{0.9204}{0.0005}} & \ci{0.9230}{0.0005} \\
+Voto majoritário & \best{\ci{0.0716}{0.0008}} & \best{\ci{0.9331}{0.0007}} & \ci{0.9174}{0.0009} & \best{\ci{0.9238}{0.0009}} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{\texttt{kstar\_classes}: estimativa pontual $\pm$ meia-amplitude do IC 95\,\% (30 repetições), com
+precisão, cobertura e F-measure em média macro, a taxa de erro com cinco casas decimais e o melhor valor de cada
+métrica em negrito.}\label{tab:ic-kstar}
+\small
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l c c c c@{}}
+\toprule
+Classificador & Taxa de erro & Precisão & Cobertura & F-measure \\
+\midrule
+Bayesiano gaussiano & \ci{0.00251}{0.00012} & \ci{0.9540}{0.0079} & \ci{0.8705}{0.0066} & \ci{0.8952}{0.0065} \\
+Bayesiano $k$-NN & \ci{0.00078}{0.00005} & \ci{0.9799}{0.0018} & \ci{0.9729}{0.0030} & \ci{0.9722}{0.0023} \\
+Janela de Parzen & \ci{0.00122}{0.00011} & \ci{0.9737}{0.0045} & \ci{0.9471}{0.0054} & \ci{0.9545}{0.0043} \\
+Regressão logística & \best{\ci{0.00077}{0.00011}} & \ci{0.9641}{0.0044} & \best{\ci{0.9949}{0.0041}} & \best{\ci{0.9762}{0.0040}} \\
+Voto majoritário & \ci{0.00080}{0.00009} & \best{\ci{0.9962}{0.0022}} & \ci{0.9490}{0.0045} & \ci{0.9668}{0.0034} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{figure}[!tbp]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 4, horizontal sep=1.7cm, vertical sep=0.7cm, xticklabels at=edge bottom},
+  scale only axis, width=6.2cm, height=3.4cm,
+  boxplot/draw direction=y, boxplot/box extend=0.55,
+  % Mean as a white diamond: the default marker inherits the box fill and disappears inside the box.
+  boxplot/draw/average/.code={\draw[black] \pgfextra \pgfsetfillcolor{white}%
+    \pgftransformshift{\pgfplotsboxplotpointabbox{\pgfplotsboxplotvalue{average}}{0.5}}%
+    \pgfuseplotmark{diamond*}\endpgfextra;},
+  xmin=0.4, xmax=5.6, xtick={1,...,5}, xticklabels={GB,KNN,PZ,RL,VM},
+  ymajorgrids, grid style={dashed, gray!30},
+  scaled y ticks=false,
+  yticklabel style={/pgf/number format/.cd, fixed, precision=3, use comma},
+  tick label style={font=\footnotesize}, label style={font=\footnotesize}, title style={font=\small},
+]
+\nextgroupplot[title={\texttt{original\_2\_classes}}, ylabel={Taxa de erro}]\bppanel{0}
+\nextgroupplot[title={\texttt{kstar\_classes}}]\bppanel{5}
+\nextgroupplot[ylabel={Precisão (macro)}]\bppanel{10}
+\nextgroupplot\bppanel{15}
+\nextgroupplot[ylabel={Cobertura (macro)}]\bppanel{20}
+\nextgroupplot\bppanel{25}
+\nextgroupplot[ylabel={F-measure (macro)}]\bppanel{30}
+\nextgroupplot\bppanel{35}
+\end{groupplot}
+\end{tikzpicture}
+\caption{Distribuição das quatro métricas nos 300 folds de teste (colunas: versões da base; linhas: métricas;
+cada painel tem escala própria). A caixa vai do primeiro ao terceiro quartil, com a mediana; os bigodes vão até o
+fold mais extremo a no máximo 1,5 vez a distância interquartil da caixa, e os folds além deles não são desenhados.
+O losango marca a média, que fica fora da caixa quando há folds atípicos, como na precisão de
+\texttt{kstar\_classes}. GB: gaussiano; KNN: $k$-NN; PZ: Parzen; RL: regressão logística; VM: voto
+majoritário.}\label{fig:boxplots}
+\end{figure}
+
+Na base original, os classificadores formam dois patamares: a regressão logística e o voto majoritário têm erro próximo de 7\,\% 
+e F-measure de 0,923, com o $k$-NN logo abaixo (erro de 8,5\,\%), enquanto o gaussiano e a janela de Parzen têm erro próximo 
+de 17\,\%. Entre os dois melhores, o voto majoritário tem a maior precisão e a regressão logística a maior cobertura. Na versão \texttt{kstar\_classes}, 
+as taxas de erro são todas muito menores que o erro trivial de 0,74\,\% (o melhor modelo erra, em média, cerca de 0,35 exemplo por fold de teste), 
+e as diferenças aparecem sobretudo na cobertura: o gaussiano reconhece pior a classe rara (cobertura macro de 0,87), enquanto a regressão logística 
+quase não a perde (0,995). Os intervalos são estreitos porque refletem apenas a variação devida à escolha das partições: como as 30 repetições usam a 
+mesma base, eles não incorporam a variação que se teria com uma nova amostra de e-mails, e não existe estimador não viesado dessa variância a partir de 
+uma única validação cruzada~\cite{bengio2004noUnbiased}. As amplitudes maiores em \texttt{kstar\_classes} decorrem dos 3 ou 4 exemplos da classe rara 
+por fold de teste, que tornam as métricas macro muito discretas.
+
+\subsection{Testes de Friedman e Nemenyi}\label{sec:friedman}
+
+Para cada versão da base e cada métrica, os cinco classificadores foram comparados pelo teste de Friedman~\cite{friedman1937ranks}, com os 300 folds 
+externos como blocos. Em cada bloco, os classificadores recebem postos de 1 (melhor: menor erro ou maior precisão, cobertura ou F-measure) a 5, 
+com postos médios em caso de empate. Com $N=300$ blocos, $k=5$ classificadores e $R_j$ o posto médio do classificador $j$, a estatística
+\begin{equation}
+\chi^2_F=\frac{12N}{k(k+1)}\Big[\sum_{j=1}^{k}R_j^2-\frac{k(k+1)^2}{4}\Big]
+\end{equation}
+segue aproximadamente a distribuição $\chi^2$ com $k-1=4$ graus de liberdade sob a hipótese nula de desempenho
+igual (usou-se \texttt{scipy.stats.friedmanchisquare}, que corrige os empates). Quando a hipótese nula é rejeitada
+com $\alpha=0{,}05$, aplica-se o pós-teste de Nemenyi~\cite{nemenyi1963distribution,demsar2006statistical}:
+dois classificadores diferem se seus postos médios diferem mais que a diferença crítica
+\begin{equation}
+\mathrm{CD}=q_{\alpha}\sqrt{\frac{k(k+1)}{6N}}=\num{2.728}\sqrt{\frac{30}{1800}}\approx\num{0.352},
+\end{equation}
+com $q_{0{,}05}=\num{2.728}$ para $k=5$~\cite{demsar2006statistical}, e os p-valores par a par foram calculados
+com \texttt{scikit-posthocs}.
+
+\begin{table}[H]
+\centering
+\caption{Teste de Friedman ($N=300$ blocos, 4 graus de liberdade; valor crítico $\chi^2_{0{,}95;4}=\num{9.49}$).}\label{tab:friedman}
+\small
+\begin{tabular}{@{}l l S[table-format=4.2] c c@{}}
+\toprule
+Versão & Métrica & {$\chi^2_F$} & p-valor & Decisão ($\alpha=0{,}05$) \\
+\midrule
+\multirow{4}{*}{\texttt{original\_2\_classes}}
+ & Taxa de erro & 1017.59 & $5{,}5\times10^{-219}$ & rejeita $H_0$ \\
+ & Precisão & 1033.16 & $2{,}3\times10^{-222}$ & rejeita $H_0$ \\
+ & Cobertura & 1047.62 & $1{,}7\times10^{-225}$ & rejeita $H_0$ \\
+ & F-measure & 1008.84 & $4{,}3\times10^{-217}$ & rejeita $H_0$ \\
+\midrule
+\multirow{4}{*}{\texttt{kstar\_classes}}
+ & Taxa de erro & 265.55 & $2{,}9\times10^{-56}$ & rejeita $H_0$ \\
+ & Precisão & 176.75 & $3{,}7\times10^{-37}$ & rejeita $H_0$ \\
+ & Cobertura & 307.65 & $2{,}4\times10^{-65}$ & rejeita $H_0$ \\
+ & F-measure & 298.77 & $2{,}0\times10^{-63}$ & rejeita $H_0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O teste de Friedman rejeitou a igualdade em todas as oito combinações (Tabela~\ref{tab:friedman}), e o pós-teste foi aplicado em todas. 
+A Tabela~\ref{tab:postos} traz os postos médios, e a Tabela~\ref{tab:nemenyi} os p-valores de Nemenyi para a F-measure.
+
+\begin{table}[H]
+\centering
+\caption{Postos médios no teste de Friedman (1 = melhor), com o menor posto de cada linha em negrito; diferenças
+maiores que $\mathrm{CD}=\num{0.352}$ são significativas pelo teste de Nemenyi ($\alpha=0{,}05$).}\label{tab:postos}
+\small
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l l c c c c c@{}}
+\toprule
+Versão & Métrica & Gaussiano & $k$-NN & Parzen & Reg.\ logística & Voto maj. \\
+\midrule
+\multirow{4}{*}{\texttt{original\_2\_classes}}
+ & Taxa de erro & \num{4.557} & \num{2.755} & \num{4.443} & \num{1.747} & \textbf{\num{1.498}} \\
+ & Precisão & \num{4.297} & \num{2.728} & \num{4.703} & \num{1.972} & \textbf{\num{1.300}} \\
+ & Cobertura & \num{4.077} & \num{2.745} & \num{4.923} & \textbf{\num{1.498}} & \num{1.757} \\
+ & F-measure & \num{4.387} & \num{2.758} & \num{4.613} & \num{1.702} & \textbf{\num{1.540}} \\
+\midrule
+\multirow{4}{*}{\texttt{kstar\_classes}}
+ & Taxa de erro & \num{3.982} & \num{2.692} & \num{3.010} & \num{2.663} & \textbf{\num{2.653}} \\
+ & Precisão & \num{3.817} & \num{2.770} & \num{2.983} & \num{2.842} & \textbf{\num{2.588}} \\
+ & Cobertura & \num{4.080} & \num{2.650} & \num{3.027} & \textbf{\num{2.532}} & \num{2.712} \\
+ & F-measure & \num{4.063} & \num{2.643} & \num{3.033} & \textbf{\num{2.548}} & \num{2.712} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{p-valores do pós-teste de Nemenyi para a F-measure macro, com os pares sem diferença significativa ($p\ge0{,}05$) em negrito. 
+GB: gaussiano; KNN: $k$-NN; PZ: Parzen; RL: regressão logística; VM: voto majoritário.}\label{tab:nemenyi}
+\small
+\setlength{\tabcolsep}{12pt}
+\begin{subtable}{\linewidth}
+\centering
+\caption{\texttt{original\_2\_classes}}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+ & GB & KNN & PZ & RL & VM \\
+\midrule
+GB & --- & $<\!10^{-4}$ & \ns{0.3998} & $<\!10^{-4}$ & $<\!10^{-4}$ \\
+KNN &  & --- & $<\!10^{-4}$ & $<\!10^{-4}$ & $<\!10^{-4}$ \\
+PZ &  &  & --- & $<\!10^{-4}$ & $<\!10^{-4}$ \\
+RL &  &  &  & --- & \ns{0.7205} \\
+VM &  &  &  &  & --- \\
+\bottomrule
+\end{tabular}
+\end{subtable}
+
+\vspace{8pt}
+\begin{subtable}{\linewidth}
+\centering
+\caption{\texttt{kstar\_classes}}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+ & GB & KNN & PZ & RL & VM \\
+\midrule
+GB & --- & $<\!10^{-4}$ & $<\!10^{-4}$ & $<\!10^{-4}$ & $<\!10^{-4}$ \\
+KNN &  & --- & \num{0.0212} & \ns{0.9481} & \ns{0.9844} \\
+PZ &  &  & --- & \num{0.0016} & \ns{0.0925} \\
+RL &  &  &  & --- & \ns{0.7127} \\
+VM &  &  &  &  & --- \\
+\bottomrule
+\end{tabular}
+\end{subtable}
+\end{table}
+
+Para as demais métricas, os pares sem diferença significativa foram:
+\begin{itemize}
+\item \texttt{original\_2\_classes}: taxa de erro, GB--PZ ($p=\num{0.905}$) e RL--VM ($p=\num{0.305}$); precisão,
+  nenhum (o voto majoritário é significativamente mais preciso que a regressão logística, $p<10^{-5}$); cobertura,
+  RL--VM ($p=\num{0.265}$). Assim, gaussiano e Parzen empatam na taxa de erro e na F-measure, mas o gaussiano tem
+  precisão ($p=\num{0.014}$) e cobertura ($p<10^{-9}$) macro significativamente maiores.
+\item \texttt{kstar\_classes}: taxa de erro e precisão, KNN--PZ, KNN--RL, KNN--VM, PZ--RL e RL--VM; cobertura,
+  KNN--RL, KNN--VM, PZ--VM e RL--VM. Em todas as métricas, o gaussiano difere de todos os demais.
+\end{itemize}
+
+Em resumo, na base original há três grupos estatisticamente distintos pela F-measure: \{voto majoritário,
+regressão logística\} no topo, o $k$-NN no meio e \{gaussiano, Parzen\} abaixo. Na versão \texttt{kstar\_classes},
+regressão logística, $k$-NN e voto majoritário não se distinguem, a janela de Parzen fica abaixo da regressão
+logística e do $k$-NN, e o gaussiano é o pior em todas as métricas.
+
+Na interpretação desses resultados, é preciso considerar, em primeiro lugar, que o roteiro de
+Demšar~\cite{demsar2006statistical} foi proposto para comparar classificadores em várias bases independentes,
+enquanto aqui os blocos são folds de uma única base, correlacionados entre si, e o grande número de blocos ($N=300$)
+torna o teste muito sensível. Os p-valores extremamente pequenos indicam, portanto, que a ordenação dos
+classificadores é muito estável entre as partições da Spambase, e não que ela se generalize a outras bases. Em
+segundo lugar, comparações por postos médios dependem do conjunto de classificadores
+incluído~\cite{benavoli2016posthoc}, e por isso as conclusões acima são sempre lidas junto com as diferenças nas
+próprias métricas (Tabelas~\ref{tab:ic-original} e~\ref{tab:ic-kstar}).
+
+\subsection{Curvas de aprendizagem}\label{sec:curvas}
+
+\paragraph{Protocolo.} Para cada versão da base e cada proporção de treino $p\in\{5\%,10\%,\dots,95\%\}$ (19
+valores), a base completa foi dividida 10 vezes em treino ($p$) e teste ($1-p$) por amostragem estratificada
+(\texttt{StratifiedShuffleSplit}, semente 42). Em cada divisão, os hiperparâmetros dos quatro classificadores
+de base foram escolhidos por validação cruzada estratificada usando apenas a parte de treino, com as mesmas grades
+e o mesmo critério da Seção~\ref{sec:hiper}; o voto majoritário usa os membros ajustados. O número de folds
+internos é $\min(5,n_{\min})$, em que $n_{\min}$ é o tamanho da menor classe no treino: na versão
+\texttt{kstar\_classes}, com 5\,\% e 10\,\% de treino há só 2 e 3 exemplos da classe rara, e a CV interna usa 2 e 3
+folds. Calculou-se a F-measure macro tanto no conjunto de treino (resubstituição) quanto no de teste, totalizando
+$2\times19\times10\times5=\num{1900}$ avaliações. As Figuras~\ref{fig:lc-original} e~\ref{fig:lc-kstar} mostram
+média $\pm$ 1 desvio-padrão das 10 divisões, e a Tabela~\ref{tab:lc} alguns pontos das curvas.
+
+\begin{table}[H]
+\centering
+\caption{F-measure macro média de treino / teste em algumas proporções de treino (10 divisões por proporção).}\label{tab:lc}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l c c c c c c@{}}
+\toprule
+Classificador & 5\,\% & 10\,\% & 25\,\% & 50\,\% & 75\,\% & 95\,\% \\
+\midrule
+\multicolumn{7}{@{}l}{\texttt{original\_2\_classes} ($n_{\text{treino}}$: 230, 460, \num{1150}, \num{2300}, \num{3450}, \num{4370})} \\
+Bayesiano gaussiano & \lc{0.904}{0.842} & \lc{0.872}{0.836} & \lc{0.843}{0.830} & \lc{0.833}{0.829} & \lc{0.830}{0.829} & \lc{0.831}{0.829} \\
+Bayesiano $k$-NN & \lc{0.932}{0.831} & \lc{0.929}{0.854} & \lc{0.941}{0.877} & \lc{0.961}{0.896} & \lc{0.942}{0.909} & \lc{0.943}{0.898} \\
+Janela de Parzen & \lc{0.915}{0.683} & \lc{0.930}{0.710} & \lc{0.991}{0.766} & \lc{0.985}{0.795} & \lc{0.986}{0.810} & \lc{0.993}{0.814} \\
+Regressão logística & \lc{0.950}{0.883} & \lc{0.936}{0.898} & \lc{0.928}{0.912} & \lc{0.928}{0.918} & \lc{0.926}{0.919} & \lc{0.929}{0.904} \\
+Voto majoritário & \lc{0.966}{0.871} & \lc{0.959}{0.888} & \lc{0.964}{0.904} & \lc{0.968}{0.916} & \lc{0.958}{0.920} & \lc{0.959}{0.910} \\
+\midrule
+\multicolumn{7}{@{}l}{\texttt{kstar\_classes} (exemplos da classe rara no treino: 2, 3, 8, 17, 25, 32)} \\
+Bayesiano gaussiano & \lc{1.000}{0.569} & \lc{1.000}{0.561} & \lc{1.000}{0.755} & \lc{0.994}{0.873} & \lc{0.985}{0.893} & \lc{0.974}{0.873} \\
+Bayesiano $k$-NN & \lc{0.950}{0.895} & \lc{1.000}{0.956} & \lc{0.997}{0.950} & \lc{0.995}{0.971} & \lc{0.997}{0.968} & \lc{1.000}{0.990} \\
+Janela de Parzen & \lc{0.966}{0.833} & \lc{1.000}{0.878} & \lc{1.000}{0.904} & \lc{1.000}{0.930} & \lc{1.000}{0.947} & \lc{1.000}{0.958} \\
+Regressão logística & \lc{0.866}{0.869} & \lc{1.000}{0.927} & \lc{0.997}{0.950} & \lc{1.000}{0.964} & \lc{1.000}{0.962} & \lc{1.000}{0.980} \\
+Voto majoritário & \lc{0.950}{0.789} & \lc{1.000}{0.888} & \lc{1.000}{0.914} & \lc{1.000}{0.946} & \lc{1.000}{0.972} & \lc{1.000}{0.966} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{figure}[!tbp]
+\centering
+\lcfigure{original_2_classes}{0.6}{0.6,0.7,...,1.0}
+\caption{Curvas de aprendizagem na versão \texttt{original\_2\_classes}: F-measure macro de treino e de teste,
+média das 10 divisões estratificadas de cada proporção de treino, com faixa de $\pm1$ desvio-padrão (limitada a 1)
+e a mesma escala em todos os painéis.}\label{fig:lc-original}
+\end{figure}
+
+\begin{figure}[!tbp]
+\centering
+\lcfigure{kstar_classes}{0.4}{0.4,0.5,...,1.0}
+\caption{Curvas de aprendizagem na versão \texttt{kstar\_classes}, com as mesmas convenções da
+Figura~\ref{fig:lc-original} e escala vertical a partir de 0,4.}\label{fig:lc-kstar}
+\end{figure}
+
+\paragraph{Comentários: \texttt{original\_2\_classes}.} As curvas separam os classificadores pelo compromisso entre
+viés e variância~\cite{hastie2009elements}:
+\begin{itemize}
+\item \textbf{Bayesiano gaussiano (viés alto).} As curvas de treino e teste convergem já com cerca de 25\,\% dos
+  dados para o mesmo patamar, $F\approx0{,}83$. A F-measure de teste é, na verdade, máxima com 5\,\% de treino
+  (0,842) e cai levemente até 0,83, sem melhorar depois disso. Mais dados não ajudam, porque o erro vem do modelo: a
+  normal multivariada descreve mal atributos esparsos, com excesso de zeros e caudas longas.
+\item \textbf{Janela de Parzen (variância alta).} A F-measure de treino fica perto de 0,99, enquanto a de teste
+  parte de 0,68 e chega a 0,81. A grande distância entre as curvas indica sobreajuste: em 57 dimensões, um
+  estimador de densidade não paramétrico precisa de muitos exemplos~\cite{silverman1986density}. É também o
+  modelo que mais ganha com o aumento da amostra (13 pontos percentuais entre 5\,\% e 90\,\%), e a curva de teste
+  ainda sobe no fim.
+\item \textbf{$k$-NN.} A curva de teste cresce de 0,83 para cerca de 0,90--0,91, com distância entre treino e teste
+  que diminui aos poucos: o método se beneficia do adensamento da amostra.
+\item \textbf{Regressão logística e voto majoritário.} São os melhores desde as menores amostras ($F$ de teste de
+  0,88 e 0,87 com 5\,\%) e estabilizam perto de 0,92 a partir de cerca de 50\,\%. A regressão logística tem a menor
+  distância entre treino e teste e o padrão clássico de um modelo linear regularizado: a F-measure de treino cai de
+  0,950 para 0,929 enquanto a de teste sobe. Em 95\,\%, a F-measure de teste cai um pouco e varia mais, porque o
+  teste tem apenas 231 exemplos.
+\end{itemize}
+
+\paragraph{Comentários: \texttt{kstar\_classes}.} A tarefa de separar os 34 e-mails do grupo $P_2$ é mais fácil
+para os modelos locais e lineares: $k$-NN e regressão logística superam $F=0{,}92$ no teste com apenas 10\,\% dos
+dados (3 exemplos da classe rara) e chegam a 0,98--0,99 no fim. O gaussiano é o que mais depende do tamanho da
+amostra: com 2 ou 3 exemplos da classe rara, a covariância estimada tem posto no máximo 1 ou 2 e a regularização
+$\varepsilon\mathbf{I}$ domina as demais direções; o modelo acerta todo o treino ($F=1$) e generaliza mal
+($F\approx0{,}56$). A F-measure de teste sobe rapidamente até cerca de 50\,\% e depois oscila entre 0,83 e
+0,93, com a maior distância para o treino entre os modelos, enquanto a janela de Parzen melhora, com oscilações, de
+0,83 para 0,96. O voto majoritário parte de 0,79 com 5\,\%, abaixo de três dos seus membros, provavelmente porque, com
+o gaussiano errando muito a classe rara, os empates de 2 a 2 são resolvidos a favor da classe 0; ele alcança 0,97
+com 75\,\%. Nas maiores proporções, o teste contém só 2 a 9 exemplos da classe rara, o que explica as faixas largas de
+desvio-padrão.
+
+%======================================================================
+\section{Discussão e limitações}\label{sec:discussao}
+%======================================================================
+
+A primeira limitação diz respeito à escolha de $K^*$, pois a silhueta selecionou uma partição dominada por 34 objetos atípicos
+(Seção~\ref{sec:q1-discussao}), sem relação com as classes a priori, e é provável que uma transformação que reduza as caudas dos atributos 
+antes do agrupamento, como $\log(1+x)$, ou um índice de validação menos sensível a grupos pequenos e isolados levasse a outra escolha; manteve-se, 
+ainda assim, o critério definido no enunciado. Essa escolha determina a natureza da versão \texttt{kstar\_classes}: como os rótulos $y^*$ foram 
+obtidos pelo agrupamento da base completa, a tarefa de  classificação consiste em reproduzir uma regra de agrupamento conhecida, e não em prever 
+um fenômeno externo. Essa regra é um hiperplano no espaço padronizado (Equação~\ref{eq:fronteira}), o que favorece a regressão logística e 
+o $k$-NN euclidiano, e, como a classe rara tem apenas 34 exemplos, as métricas macro de cada fold dependem de 3 ou 4 exemplos.
+
+Algumas decisões de implementação dos classificadores também afetam os resultados, a começar pela janela de Parzen, cujo estimador recebe os atributos 
+na escala original, com a mesma janela $h$ em todas as dimensões. Como os desvios-padrão variam de $\num{0.076}$ a $\num{606}$, a distância no kernel 
+é dominada pelos atributos \texttt{capital\_run\_length\_*}, e uma janela de 1 ou 2 é larga demais para as frequências e estreita demais para as
+contagens de maiúsculas, o que provavelmente contribui para o desempenho fraco e o sobreajuste observados; a correção natural seria padronizar os 
+atributos dentro do modelo, como no $k$-NN. No classificador gaussiano, o termo $\varepsilon\mathbf{I}$ é um desvio mínimo, mas real, da estimativa 
+de máxima verossimilhança pedida no enunciado, que se justifica porque a densidade não está definida quando $\hat{\bm\Sigma}_i$ é singular. 
+Na regressão logística, $C=100$, o maior valor da grade, foi escolhido em 160 dos 300 folds da base original, de modo que uma grade mais ampla 
+permitiria verificar se uma regularização ainda mais fraca traria ganho. Por fim, no voto majoritário, os empates de 2 a 2 entre os quatro
+votantes vão para a classe 0; na base original, essa regra favorece \enquote{não spam} e é compatível com o comitê ter a maior precisão e uma 
+cobertura menor que a da regressão logística.
+
+No protocolo de avaliação, por fim, as 391 linhas duplicadas foram mantidas, e uma cópia no treino e outra no teste é acertada trivialmente pelo $k$-NN 
+com $k=1$, escolhido em 73 folds da base original e em 242 da versão \texttt{kstar\_classes}; essas estimativas são, portanto, levemente otimistas, 
+sobretudo na classe rara de \texttt{kstar\_classes}, em que só 28 dos 34 e-mails são distintos. Além disso, tanto os intervalos de confiança
+quanto os testes de Friedman e Nemenyi usam resultados de partições da mesma base e, por isso, subestimam a incerteza em relação a novas amostras 
+(Seções~\ref{sec:ic} e~\ref{sec:friedman}), algo que alternativas como o teste $t$ corrigido de Nadeau e Bengio~\cite{nadeau2003inference} levam
+em conta; ao avaliarem a replicabilidade de vários testes, Bouckaert e Frank~\cite{bouckaert2004evaluating} optaram justamente por ele. Finalmente, seguindo o item d) do enunciado, as curvas de aprendizagem foram calculadas apenas para a F-measure, e as demais métricas não 
+foram registradas nesse experimento.
+
+%======================================================================
+\section{Conclusões}\label{sec:conclusao}
+%======================================================================
+
+Na Questão~1, as 900 execuções do double k-means convergiram pelo critério dos slides, e a silhueta das melhores
+execuções de cada par selecionou $(K^*,H^*)=(2,2)$, com $\Sil=\num{0.6596}$, mais que o dobro do segundo maior
+valor. A partição obtida isola 34 e-mails legítimos que usam com frequência muito alta 11 palavras e números ligados
+à HP, origem dos e-mails não spam da base, e tem $\ARI=\num{-0.00495}$ frente às classes spam/não spam, o que mostra
+que a estrutura geométrica dominante na base padronizada não é a divisão entre spam e não spam, mas a separação de
+um pequeno grupo atípico. Esse resultado decorre tanto do critério de seleção quanto do próprio algoritmo, já que a
+silhueta, por ser uma média sobre todos os objetos, premia a separação de poucos pontos extremos, e a soma de
+quadrados do double k-means dá peso desproporcional às caudas longas dos atributos esparsos. Além disso, a análise
+da partição na convergência mostrou que a fronteira entre os dois grupos é um hiperplano no espaço padronizado
+(Equação~\ref{eq:fronteira}), fato que antecipa o comportamento dos classificadores na segunda versão da base.
+
+Na Questão~2, a validação cruzada estratificada $30\times10$ com ajuste interno de hiperparâmetros, aplicada da
+mesma forma aos cinco classificadores, mostrou que, na detecção de spam, o voto majoritário ($F=\num{0.9238}$,
+erro de 7,2\,\%) e a regressão logística ($F=\num{0.9230}$, erro de 7,3\,\%) são estatisticamente equivalentes e
+superiores aos demais, seguidos pelo $k$-NN com distância city-block ($F=\num{0.9093}$), enquanto o gaussiano e a
+janela de Parzen ficaram abaixo ($F\approx0{,}82$--$0{,}83$). Embora empatem na F-measure, os dois melhores modelos
+chegam a esse resultado por caminhos diferentes: o voto majoritário tem a maior precisão e a regressão logística a
+maior cobertura, diferença coerente com a regra de desempate do comitê a favor da classe não spam. As curvas de
+aprendizagem ajudam a explicar a ordenação, pois indicam que o gaussiano é limitado por viés, já que a normal
+multivariada descreve mal atributos esparsos e de cauda longa e mais dados não melhoram o seu desempenho, ao passo
+que a janela de Parzen é limitada por variância, com grande distância entre treino e teste em 57 dimensões e uma
+curva de teste que ainda sobe com 95\,\% dos dados. A regressão logística, por sua vez, tem bom desempenho desde as
+menores amostras e a menor distância entre treino e teste, o que, diante do empate estatístico com o voto
+majoritário, que exige ajustar quatro modelos, a torna a opção mais econômica para essa tarefa.
+
+Na versão com os rótulos da Questão~1, regressão logística, $k$-NN e voto majoritário reproduzem quase perfeitamente
+a partição ($F$ entre $\num{0.967}$ e $\num{0.976}$) e não se distinguem estatisticamente, resultado esperado porque a
+fronteira entre os grupos é linear e foi definida pela distância euclidiana nos atributos padronizados, a mesma
+geometria do $k$-NN escolhido na maioria dos folds. O gaussiano é o pior em todas as métricas, prejudicado por uma
+classe rara com menos exemplos de treino que atributos, cuja covariância estimada é singular sem o termo
+$\varepsilon\mathbf{I}$. Como essa versão mede a capacidade de reproduzir uma regra de agrupamento, e não de prever
+um fenômeno externo, os seus resultados não devem ser lidos como evidência da utilidade prática dos classificadores.
+
+Do ponto de vista metodológico, a separação entre seleção e avaliação mostrou-se necessária, pois, na versão
+\texttt{kstar\_classes}, a F-measure interna da combinação escolhida para o $k$-NN ($\num{0.9879}$) supera a de teste
+($\num{0.9722}$), um otimismo que teria sido reportado como desempenho caso a mesma validação servisse para escolher
+e para avaliar os modelos. A comparação pareada nas mesmas 300 partições, por sua vez, deu aos testes de Friedman e
+Nemenyi grande poder para ordenar os classificadores, embora os p-valores reflitam a estabilidade dessa ordenação
+dentro da Spambase, e não a sua generalização para outras bases. Como continuação, as limitações da
+Seção~\ref{sec:discussao} apontam caminhos diretos: repetir o agrupamento após uma transformação que reduza as caudas
+dos atributos, padronizar os atributos dentro da janela de Parzen, ampliar a grade de $C$ da regressão logística e
+substituir os intervalos e testes por procedimentos que considerem a dependência entre folds, como o teste $t$
+corrigido de Nadeau e Bengio~\cite{nadeau2003inference}.
+
+% Printed in English so biblatex uses the IEEE strings (vol., no., pp., and, Eds., [Online]. Available).
+\begin{otherlanguage}{american}
+\printbibliography[heading=bibintoc,title={Referências}]
+\end{otherlanguage}
+
+\appendix
+%======================================================================
+\section{Reprodução dos resultados}\label{app:reproducao}
+%======================================================================
+
+Os experimentos usaram o arquivo \texttt{dataset/spambase.data} do repositório UCI, cujo resumo SHA-256 é
+\begin{center}
+\small\texttt{b1ef93de71f97714d3d7d4f58fc9f718da7bbc8ac8a150eff2778616a8097b12}.
+\end{center}
+Na raiz do repositório, com as dependências instaladas por \texttt{poetry install}, os comandos abaixo, nesta
+ordem, geram todos os resultados usados no relatório:
+
+\begin{enumerate}[leftmargin=*]
+\item \texttt{poetry run python -m src.experiments.question\_1}\\
+  900 execuções do double k-means e melhor execução de cada par $(K,H)$ (\texttt{results/q1\_*}).
+\item \texttt{poetry run python -m src.analysis.silhouette}\\
+  Silhueta dos 9 vencedores e escolha de $(K^*,H^*)$ (\texttt{results/silhouette\_scores.csv}).
+\item \texttt{poetry run python -m src.analysis.clustering\_evaluation}\\
+  ARI, matriz $\mathbf{G}$, contingência e rótulos $y^*$ (\texttt{results/q1\_object\_labels.csv}).
+\item \texttt{poetry run python -m src.experiments.question\_2 -{}-n-jobs -1}\\
+  Validação cruzada $30\times10$ com ajuste interno (\texttt{results/q2/cv\_30x10\_results.csv}).
+\item \texttt{poetry run python -m src.analysis.statistical\_analysis}\\
+  IC 95\,\%, Friedman e Nemenyi (arquivos em \texttt{results/}).
+\item \texttt{poetry run python docs/relatorio/gerar\_boxplots.py}\\
+  Estatísticas dos \textit{boxplots} da Figura~\ref{fig:boxplots} (\texttt{docs/relatorio/dados/boxplots.csv}).
+\item \texttt{poetry run python -m src.experiments.learning\_curves -{}-n-jobs -1}\\
+  Curvas de aprendizagem (arquivos em \texttt{results/} e \texttt{plots/}).
+\end{enumerate}
+
+Para compilar este relatório: \texttt{latexmk -pdf relatorio.tex} no diretório \texttt{docs/relatorio}.
+
+\end{document}
