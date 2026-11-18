@@ -4,6 +4,18 @@ Implementação experimental completa do projeto da disciplina de **Aprendizagem
 
 ---
 
+## 📦 Entregáveis
+
+Conforme a especificação oficial ([`docs/Projeto-AM-2026-2.pdf`](docs/Projeto-AM-2026-2.pdf)), os arquivos abaixo são entregues **individualmente** no **Google Classroom** (sem `.zip`):
+
+- **[`docs/source_code.txt`](docs/source_code.txt):** Programa fonte consolidado em um único arquivo, com todo o código de `src/` (módulos `.py` e o `README.md` de cada pasta) e de `tests/`, em ordem alfabética de caminho. Cada arquivo é precedido por um cabeçalho com o caminho e, quando há docstring de módulo, um título em português; o conteúdo segue sem alterações (docstrings e comentários em inglês). Reflete o código do commit `6942125` (17/11/2026).
+- **[`docs/Projeto_Final_Spambase_G7.pdf`](docs/Projeto_Final_Spambase_G7.pdf):** Slides da apresentação oral ($15$ slides).
+- **[`docs/relatorio/relatorio.pdf`](docs/relatorio/relatorio.pdf):** Relatório final do projeto em LaTeX ($25$ páginas: descrição dos dados, organização dos experimentos, Questões 1 e 2, discussão, conclusões e reprodução dos resultados).
+
+*(Não há executável: os experimentos rodam diretamente a partir do código-fonte, conforme a seção **🚀 Como Reproduzir os Experimentos**. O `source_code.txt` serve para leitura e não substitui a estrutura de pastas nem o `pyproject.toml`.)*
+
+---
+
 ## 📄 Relatórios e Análises Concluídas
 
 - **[`REPORT.md`](REPORT.md):** Relatório Técnico consolidado (Questões 1 e 2, metodologia, decisões de implementação, tabelas, gráficos e conclusões).
@@ -41,7 +53,10 @@ spambase-double-kmeans-classifiers/
 │   └── spambase.names                # Descrição dos 57 atributos e classes
 ├── docs/
 │   ├── Projeto-AM-2026-2.pdf         # Especificação oficial do projeto
-│   └── Double k-means.pdf            # Referência teórica do Double K-Means
+│   ├── Double k-means.pdf            # Referência teórica do Double K-Means
+│   ├── Projeto_Final_Spambase_G7.pdf # Slides da apresentação (entregável)
+│   ├── source_code.txt               # Programa fonte consolidado (entregável)
+│   └── relatorio/                    # Relatório em LaTeX; relatorio.pdf é o entregável
 ├── src/
 │   ├── clustering/
 │   │   └── double_kmeans.py          # Algoritmo Double K-Means (Vichi, 2001)
